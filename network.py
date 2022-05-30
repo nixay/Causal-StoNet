@@ -42,19 +42,20 @@ class Net(nn.Module):
 
         mode: str
             scenario of calculating gradient
-            "l" means calculating gradient for latent variables
-            "p" means calculating gradient for network parameters
+            "l": calculating gradient for latent variables
+            "p": calculating gradient for network parameters
         hidden_list: list of lists
             latent variables in each layer (i.e. Y_i's)
         layer_index: int
             index of each layer, starting from 0
-        loss_sum: functions to calculate log_likelihood for the last hidden layer
+        loss_sum:
+            functions to calculate log_likelihood for the last hidden layer
         sigma_list: list
-            variance for the latent variables for each hidden layers. length = num_hidden + 1
+            variance of the variables for each layer. dim = num_hidden + 1
         x: tensor
-            input of the network. dim = input_dim
+            input of the network.
         y: tensor
-            output of the network. dim = 1
+            output of the network.
         """
         if mode == "l":  # latent sampling
             hidden_list[layer_index].requires_grad = True
@@ -88,13 +89,14 @@ class Net(nn.Module):
             learning rate for SGHMC. dim = num_hidden
         ita: float
             friction coefficient for SGHMC.
-        loss_sum: functions to calculate log_likelihood for the last hidden layer
+        loss_sum:
+            functions to calculate log_likelihood for the last hidden layer
         sigma_list: list
-            variance for the latent variables for each hidden layers. length = num_hidden + 1
+            variance of the variables for each layer. dim = num_hidden + 1
         x: tensor
             input of the network. dim = input_dim
         y: tensor
-            output of the network. dim = 1
+            output of the network.
         """
         # initialize momentum term and hidden units
         hidden_list, momentum_list = [], []
@@ -113,7 +115,7 @@ class Net(nn.Module):
                 hidden_likelihood = self.likelihood("l", hidden_list, layer_index, loss_sum, sigma_list, x, y)
                 hidden_likelihood.backward()
 
-            # update momentum variable and latent varibales
+            # update momentum variable and latent variables
             for layer_index in reversed(range(self.num_hidden)):
                 alpha = lrs[layer_index] * ita
                 temperature = np.random.normal(0, 1, momentum_list[layer_index].size())
