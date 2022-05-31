@@ -27,7 +27,7 @@ parser.add_argument('--subset', dest='subset', action='store_true',
                     help='for acic data with continuous out come variable, use a subset of data to train')
 parser.set_defaults(subset=False)
 
-parser.add_arugment('--data_name', default='speed', type=str,
+parser.add_argument('--data_name', default='speed', type=str,
                     help='data name of the acic data with binary outcome variable. The other option is epi')
 
 # model
