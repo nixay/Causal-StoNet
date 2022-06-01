@@ -150,7 +150,7 @@ if regression_flag is True:
     base_path = os.path.join('.', 'result', data_source, 'regression')
 else:
     base_path = os.path.join('.', 'result', data_source, 'classification')
-spec = str(impute_lrs[0]) + '_' + str(para_lrs[0]) + '_' + str(hidden_dim)
+spec = str(impute_lrs) + '_' + str(para_lrs) + '_' + str(hidden_dim)
 PATH = os.path.join(base_path, spec)
 
 if not os.path.isdir(PATH):
@@ -239,12 +239,12 @@ for epoch in range(epochs):
 torch.save(net.state_dict(), os.path.join(PATH, 'model' + '.pt'))
 
 if regression_flag:
-    filename = PATH + 'training_result.txt'
+    filename = PATH + '_training_result.txt'
     f = open(filename, 'wb')
     pickle.dump([train_loss_path, val_loss_path], f)
     f.close()
 else:
-    filename = PATH + 'training_result.txt'
+    filename = PATH + '_training_result.txt'
     f = open(filename, 'wb')
     pickle.dump([train_loss_path, val_loss_path, val_accuracy_path], f)
     f.close()
