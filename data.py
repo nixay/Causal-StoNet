@@ -37,14 +37,14 @@ def data_filter(filepath, file_names):
 
 def row_processor_cont(row):
     y = np.array(row[0], dtype=np.float32).reshape(1)
-    treat = np.array(row[1], dtype=np.int64)
+    treat = np.array(row[1], dtype=np.float32)
     x = np.array(row[2:], dtype=np.float32)
     return y, treat, x
 
 
 def row_processor_bin(row):
     label = np.array(row[0], dtype=np.int64)
-    treat = np.array(row[1], dtype=np.int64)
+    treat = np.array(row[1], dtype=np.float32)
     x = np.array(row[2:], dtype=np.float32)
     return label, treat, x
 
@@ -103,7 +103,7 @@ def row_processor_cont_test(row):
     EY1 = np.array(row[1], dtype=np.float32)
     EY0 = np.array(row[2], dtype=np.float32)
     y = np.array(row[3], dtype=np.float32).reshape(1)
-    treat = np.array(row[4], dtype=np.int64)
+    treat = np.array(row[4], dtype=np.float32)
     x = np.array(row[5:], dtype=np.float32)
     return ATE, EY1, EY0, y, treat, x
 
@@ -113,7 +113,7 @@ def row_processor_bin_test(row):
     EY1 = np.array(row[1], dtype=np.float32)
     EY0 = np.array(row[2], dtype=np.float32)
     label = np.array(row[3], dtype=np.int64)
-    treat = np.array(row[4], dtype=np.int64)
+    treat = np.array(row[4], dtype=np.float32)
     x = np.array(row[5:], dtype=np.float32)
     return ATE, EY1, EY0, label, treat, x
 
@@ -164,7 +164,7 @@ class SimulationData_Cont(Dataset):
         np.random.seed(self.seed)
         torch.manual_seed(self.seed)
         for i in range(int(self.size)):
-            treat_temp = np.random.binomial(1, 0.5)
+            treat_temp = np.float32(np.random.binomial(1, 0.5))
 
             ee = np.sqrt(sigma) * np.random.normal(0, 1)
             x_temp = np.repeat(ee, 5)
@@ -211,7 +211,7 @@ class SimulationData_Bin(Dataset):
         np.random.seed(self.seed)
         torch.manual_seed(self.seed)
         for i in range(int(self.size)):
-            treat_temp = np.random.binomial(1, 0.5)
+            treat_temp = np.float32(np.random.binomial(1, 0.5))
 
             ee = np.sqrt(sigma) * np.random.normal(0, 1)
             x_temp = np.repeat(ee, 5)
