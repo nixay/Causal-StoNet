@@ -31,20 +31,20 @@ parser.add_argument('--data_name', default='speed', type=str,
                     help='data name of the acic data with binary outcome variable. The other option is epi')
 
 # model
-parser.add_argument('--layer', default=2, type=int, help='number of hidden layer (not including the treatment layer')
-parser.add_argument('--unit', default=[20, 15], type=int, nargs='+', help='number of hidden unit in each layer')
-parser.add_argument('--sigma', default=[0.001, 0.0001, 0.00001], type=float, nargs='+',
+parser.add_argument('--layer', default=3, type=int, help='number of hidden layer (not including the treatment layer')
+parser.add_argument('--unit', default=[64, 32, 16], type=int, nargs='+', help='number of hidden unit in each layer')
+parser.add_argument('--sigma', default=[1e-4, 1e-3, 1e-2, 1e-2], type=float, nargs='+',
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
 
 # Training Setting
 parser.add_argument('--nepoch', default=100, type=int, help='total number of training epochs')
-parser.add_argument('--batch_size', default=50, type=int, help='batch size for training')
+parser.add_argument('--batch_size', default=64, type=int, help='batch size for training')
 
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
 parser.add_argument('--impute_lr', default=[0.0000001], type=float, nargs='+', help='step size in imputation')
-parser.add_argument('--ita', default=0.5, type=float, help='friction coefficient for SGHMC')
+parser.add_argument('--ita', default=0.2, type=float, help='friction coefficient for SGHMC')
 
 parser.add_argument('--para_lr', default=[0.0001, 0.0000001], type=float, nargs='+',
                     help='step size in parameter update')
@@ -149,7 +149,7 @@ if len(sigma_list) == 1 and num_hidden > 1:
 if regression_flag is True:
     base_path = os.path.join('.', 'result', data_source, 'regression')
 else:
-    base_path = os.path.join('.', 'result', data_source, 'classification')
+    base_path = os.path.join('.', 'result', data_source, 'classification', data_name)
 spec = str(impute_lrs) + '_' + str(para_lrs) + '_' + str(hidden_dim)
 PATH = os.path.join(base_path, spec)
 
