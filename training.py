@@ -46,7 +46,7 @@ parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step
 parser.add_argument('--impute_lr', default=[0.0000001], type=float, nargs='+', help='step size in imputation')
 parser.add_argument('--ita', default=0.2, type=float, help='friction coefficient for SGHMC')
 
-parser.add_argument('--para_lr', default=[0.0001, 0.0000001], type=float, nargs='+',
+parser.add_argument('--para_lr', default=[1e-4, 1e-5, 1e-6], type=float, nargs='+',
                     help='step size in parameter update')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum parameter for parameter update')
 parser.add_argument('--patience', default=5, type=int, help='patience for early stopping')
@@ -214,6 +214,9 @@ for epoch in range(epochs):
             val_loss += loss(pred, y).item()
             if regression_flag is False:
                 correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+                print('pred', pred)
+                print(pred.argmax(1))
+                print(y)
 
     val_loss /= num_batches
     val_loss_path[epoch] = val_loss
