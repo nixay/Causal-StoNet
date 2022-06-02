@@ -214,9 +214,6 @@ for epoch in range(epochs):
             val_loss += loss(pred, y).item()
             if regression_flag is False:
                 correct += (pred.argmax(1) == y).type(torch.float).sum().item()
-                print('pred', pred)
-                print(pred.argmax(1))
-                print(y)
 
     val_loss /= num_batches
     val_loss_path[epoch] = val_loss
