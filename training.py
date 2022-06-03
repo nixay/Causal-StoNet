@@ -192,7 +192,7 @@ for epoch in range(epochs):
             if p.grad is not None:
                 p.grad.zero_()
 
-        adj_factor = train_size / batch_size
+        adj_factor = batch_size / train_size
         for layer_index in range(num_hidden + 1):
             hidden_likelihood = -adj_factor * net.likelihood("p", hidden_list, layer_index, loss_sum, sigma_list, x, y,
                                                              treat)
