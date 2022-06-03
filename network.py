@@ -90,7 +90,7 @@ class Net(nn.Module):
             temp1 = hidden_list[self.treat_layer][:, 0:self.treat_node]
             temp2 = hidden_list[self.treat_layer][:, self.treat_node + 1:]
             treat_layer_rest = torch.cat((temp1, temp2), 1)
-            likelihood = -treat_loss_sum(z1, treat) - sse(z_rest, treat_layer_rest) / (2 * sigma_list[layer_index])
+            likelihood = -(treat_loss_sum(z1, treat) + sse(z_rest, treat_layer_rest)) / (2 * sigma_list[layer_index])
 
         elif layer_index == self.num_hidden:  # log_likelihood(Y|Y_h)
             likelihood = -loss_sum(self.module_dict[str(self.num_hidden)](hidden_list[-1]), y) / (
