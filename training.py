@@ -38,13 +38,13 @@ parser.add_argument('--treat_node', default=1, type=int, help='the position of t
 
 # Training Setting
 parser.add_argument('--nepoch', default=100, type=int, help='total number of training epochs')
-parser.add_argument('--batch_size', default=64, type=int, help='batch size for training')
+parser.add_argument('--batch_size', default=50, type=int, help='batch size for training')
 
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
 parser.add_argument('--impute_lr', default=[0.0000001], type=float, nargs='+', help='step size in imputation')
 parser.add_argument('--ita', default=0.5, type=float, help='friction coefficient for SGHMC')
 
-parser.add_argument('--para_lr', default=[1e-4, 1e-5, 1e-6, 1e-7], type=float, nargs='+',
+parser.add_argument('--para_lr', default=[1e-4], type=float, nargs='+',
                     help='step size in parameter update')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum parameter for parameter update')
 parser.add_argument('--patience', default=5, type=int, help='patience for early stopping')
