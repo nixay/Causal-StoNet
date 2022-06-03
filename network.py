@@ -16,6 +16,7 @@ class Net(nn.Module):
     treat_layer: int
                 index of the layer that has treatment variable
     """
+
     def __init__(self, num_hidden, hidden_dim, input_dim, output_dim, treat_layer, treat_node):
         super(Net, self).__init__()
         self.num_hidden = num_hidden
@@ -39,7 +40,7 @@ class Net(nn.Module):
         # needed for calculating train loss and test loss
         x = self.module_dict[str(0)](x)
         for layer_index in range(self.num_hidden):
-            x = self.module_dict[str(layer_index+1)](x)
+            x = self.module_dict[str(layer_index + 1)](x)
         return x
 
     def likelihood(self, mode, hidden_list, layer_index, loss_sum, sigma_list, x, y, treat):
@@ -66,11 +67,13 @@ class Net(nn.Module):
             treatment variable, binary
         """
         if mode == "l":  # latent sampling
-            hidden_list[layer_index].requires_grad = True
+            for i in range(self.num_hidden):
+                hidden_list[i].requires_grad = True
             for p in self.parameters():
                 p.requires_grad = False
         if mode == "p":  # parameter update
-            hidden_list[layer_index].requires_grad = False
+            for i in range(self.num_hidden):
+                hidden_list[i].requires_grad = False
             for p in self.parameters():
                 p.requires_grad = True
         sse = nn.MSELoss(reduction='sum')
@@ -79,20 +82,28 @@ class Net(nn.Module):
         if layer_index == 0:  # log_likelihood(Y_1|X)
             likelihood = -sse(self.module_dict[str(layer_index)](x), hidden_list[layer_index]) / (2 * sigma_list[
                 layer_index])
+            print(str(layer_index) + 'likelihood', likelihood)
+
         elif layer_index == self.treat_layer:  # log_likelihood(Y_i, A|Y_{i-1})
             z = self.module_dict[str(layer_index)](hidden_list[layer_index - 1])
             z1 = z[:, self.treat_node]
-            z_rest = torch.cat((z[:, 0:self.treat_node], z[:, self.treat_node+1:]), 1)
+            z_rest = torch.cat((z[:, 0:self.treat_node], z[:, self.treat_node + 1:]), 1)
             temp1 = hidden_list[self.treat_layer][:, 0:self.treat_node]
-            temp2 = hidden_list[self.treat_layer][:, self.treat_node+1:]
+            temp2 = hidden_list[self.treat_layer][:, self.treat_node + 1:]
             treat_layer_rest = torch.cat((temp1, temp2), 1)
-            likelihood = -treat_loss_sum(z1, treat) - sse(z_rest, treat_layer_rest)/(2 * sigma_list[layer_index])
+            likelihood = -treat_loss_sum(z1, treat) - sse(z_rest, treat_layer_rest) / (2 * sigma_list[layer_index])
+            # print('entropy', -treat_loss_sum(z1, treat))
+            # print('sse', -sse(z_rest, treat_layer_rest) / (2 * sigma_list[layer_index]))
+
+        elif layer_index == self.num_hidden:  # log_likelihood(Y|Y_h)
+            likelihood = -loss_sum(self.module_dict[str(self.num_hidden)](hidden_list[-1]), y) / (
+                    2 * sigma_list[self.num_hidden])
+            print(str(layer_index) + 'likelihood', likelihood)
+
         else:  # log_likelihood(Y_i|Y_i-1)
             likelihood = -sse(self.module_dict[str(layer_index)](hidden_list[layer_index - 1]),
                               hidden_list[layer_index]) / (2 * sigma_list[layer_index])
-        if layer_index == self.num_hidden - 1:  # log_likelihood(Y|Y_h)
-            likelihood -= loss_sum(self.module_dict[str(self.num_hidden)](hidden_list[-1]), y) / (2 * sigma_list[
-                self.num_hidden])
+            print(str(layer_index) + 'likelihood', likelihood)
         return likelihood
 
     def backward_imputation(self, mh_step, lrs, ita, loss_sum, sigma_list, x, y, treat):
@@ -128,24 +139,27 @@ class Net(nn.Module):
 
         # backward imputation by SGHMC
         for step in range(mh_step):
-            # calculate gradient for latent variables
-            for layer_index in range(self.num_hidden):
-                if hidden_list[layer_index].grad is not None:  # clear the gradient of latent variables
+            for layer_index in reversed(range(self.num_hidden)):
+                if hidden_list[layer_index].grad is not None:
                     hidden_list[layer_index].grad.zero_()
-                hidden_likelihood = self.likelihood("l", hidden_list, layer_index, loss_sum, sigma_list, x,
-                                                    y, treat)
+
+                hidden_likelihood1 = self.likelihood("l", hidden_list, layer_index + 1, loss_sum, sigma_list, x, y,
+                                                     treat)
+                hidden_likelihood2 = self.likelihood("l", hidden_list, layer_index, loss_sum, sigma_list, x, y, treat)
+                hidden_likelihood = hidden_likelihood1 + hidden_likelihood2
+
                 hidden_likelihood.backward()
 
-            # update momentum variable and latent variables
-            for layer_index in reversed(range(self.num_hidden)):
                 alpha = lrs[layer_index] * ita
                 temperature = np.random.normal(0, 1, momentum_list[layer_index].size())
+                lr = lrs[layer_index]
                 with torch.no_grad():
-                    momentum_list[layer_index] = (1 - alpha) * momentum_list[layer_index] + lrs[layer_index] * \
-                                                 hidden_list[layer_index].grad + np.sqrt(2 * alpha) * temperature
+                    momentum_list[layer_index] = (1 - alpha) * momentum_list[layer_index] + lr * hidden_list[
+                        layer_index].grad + np.sqrt(2 * alpha) * temperature
                     if layer_index == self.treat_layer:
                         # treatment node will not be updated
                         momentum_list[layer_index][:, self.treat_node] = torch.zeros_like(treat)
+                        print('momentum_list', momentum_list[layer_index])
                     hidden_list[layer_index].data += momentum_list[layer_index]
 
         # turn off the gradient tracking after final update of hidden_list
