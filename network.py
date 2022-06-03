@@ -82,7 +82,6 @@ class Net(nn.Module):
         if layer_index == 0:  # log_likelihood(Y_1|X)
             likelihood = -sse(self.module_dict[str(layer_index)](x), hidden_list[layer_index]) / (2 * sigma_list[
                 layer_index])
-            print(str(layer_index) + 'likelihood', likelihood)
 
         elif layer_index == self.treat_layer:  # log_likelihood(Y_i, A|Y_{i-1})
             z = self.module_dict[str(layer_index)](hidden_list[layer_index - 1])
@@ -92,18 +91,14 @@ class Net(nn.Module):
             temp2 = hidden_list[self.treat_layer][:, self.treat_node + 1:]
             treat_layer_rest = torch.cat((temp1, temp2), 1)
             likelihood = -treat_loss_sum(z1, treat) - sse(z_rest, treat_layer_rest) / (2 * sigma_list[layer_index])
-            # print('entropy', -treat_loss_sum(z1, treat))
-            # print('sse', -sse(z_rest, treat_layer_rest) / (2 * sigma_list[layer_index]))
 
         elif layer_index == self.num_hidden:  # log_likelihood(Y|Y_h)
             likelihood = -loss_sum(self.module_dict[str(self.num_hidden)](hidden_list[-1]), y) / (
                     2 * sigma_list[self.num_hidden])
-            print(str(layer_index) + 'likelihood', likelihood)
 
         else:  # log_likelihood(Y_i|Y_i-1)
             likelihood = -sse(self.module_dict[str(layer_index)](hidden_list[layer_index - 1]),
                               hidden_list[layer_index]) / (2 * sigma_list[layer_index])
-            print(str(layer_index) + 'likelihood', likelihood)
         return likelihood
 
     def backward_imputation(self, mh_step, lrs, ita, loss_sum, sigma_list, x, y, treat):
@@ -159,7 +154,6 @@ class Net(nn.Module):
                     if layer_index == self.treat_layer:
                         # treatment node will not be updated
                         momentum_list[layer_index][:, self.treat_node] = torch.zeros_like(treat)
-                        print('momentum_list', momentum_list[layer_index])
                     hidden_list[layer_index].data += momentum_list[layer_index]
 
         # turn off the gradient tracking after final update of hidden_list
