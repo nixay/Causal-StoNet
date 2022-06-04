@@ -109,14 +109,13 @@ class Net(nn.Module):
         # backward imputation by SGHMC
         for step in range(mh_step):
             for layer_index in reversed(range(self.num_hidden)):
-                if hidden_list[layer_index].grad is not None:  # clear the gradient of latent variables
-                    hidden_list[layer_index].grad.zero_()
+                hidden_list[layer_index].grad = None  # clear the gradient of latent variables
 
                 hidden_likelihood1 = self.likelihood("l", hidden_list, layer_index + 1, loss_sum, sigma_list, x, y)
                 hidden_likelihood2 = self.likelihood("l", hidden_list, layer_index, loss_sum, sigma_list, x, y)
-                hidden_likelihood = hidden_likelihood1 + hidden_likelihood2
 
-                hidden_likelihood.backward()
+                hidden_likelihood1.backward()
+                hidden_likelihood2.backward()
 
                 alpha = lrs[layer_index] * ita
                 temperature = np.random.normal(0, 1, momentum_list[layer_index].size())
