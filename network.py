@@ -90,7 +90,7 @@ class Net(nn.Module):
             temp1 = hidden_list[self.treat_layer][:, 0:self.treat_node]
             temp2 = hidden_list[self.treat_layer][:, self.treat_node + 1:]
             treat_layer_rest = torch.cat((temp1, temp2), 1)
-            likelihood = -(treat_loss_sum(z1, treat) + sse(z_rest, treat_layer_rest)) / (2 * sigma_list[layer_index])
+            likelihood = -treat_loss_sum(z1, treat) - sse(z_rest, treat_layer_rest) / (2 * sigma_list[layer_index])
 
         elif layer_index == self.num_hidden:  # log_likelihood(Y|Y_h)
             likelihood = -loss_sum(self.module_dict[str(self.num_hidden)](hidden_list[-1]), y) / (
@@ -135,15 +135,13 @@ class Net(nn.Module):
         # backward imputation by SGHMC
         for step in range(mh_step):
             for layer_index in reversed(range(self.num_hidden)):
-                if hidden_list[layer_index].grad is not None:
-                    hidden_list[layer_index].grad.zero_()
+                hidden_list[layer_index].grad = None
 
-                hidden_likelihood1 = self.likelihood("l", hidden_list, layer_index + 1, loss_sum, sigma_list, x, y,
-                                                     treat)
+                hidden_likelihood1 = self.likelihood("l", hidden_list, layer_index + 1, loss_sum, sigma_list, x, y, treat)
                 hidden_likelihood2 = self.likelihood("l", hidden_list, layer_index, loss_sum, sigma_list, x, y, treat)
-                hidden_likelihood = hidden_likelihood1 + hidden_likelihood2
 
-                hidden_likelihood.backward()
+                hidden_likelihood1.backward()
+                hidden_likelihood2.backward()
 
                 alpha = lrs[layer_index] * ita
                 temperature = np.random.normal(0, 1, momentum_list[layer_index].size())
