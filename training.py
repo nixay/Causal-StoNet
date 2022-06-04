@@ -31,23 +31,23 @@ parser.add_argument('--data_name', default='speed', type=str,
 # model
 parser.add_argument('--layer', default=3, type=int, help='number of hidden layer (not including the treatment layer')
 parser.add_argument('--unit', default=[64, 32, 16], type=int, nargs='+', help='number of hidden unit in each layer')
-parser.add_argument('--sigma', default=[1e-4, 1e-3, 1e-2, 1e-2], type=float, nargs='+',
+parser.add_argument('--sigma', default=[1e-6, 1e-5, 1e-4, 1e-3], type=float, nargs='+',
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
 
 # Training Setting
-parser.add_argument('--nepoch', default=100, type=int, help='total number of training epochs')
+parser.add_argument('--nepoch', default=1000, type=int, help='total number of training epochs')
 parser.add_argument('--batch_size', default=50, type=int, help='batch size for training')
 
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
 parser.add_argument('--impute_lr', default=[0.0000001], type=float, nargs='+', help='step size in imputation')
 parser.add_argument('--ita', default=0.5, type=float, help='friction coefficient for SGHMC')
 
-parser.add_argument('--para_lr', default=[1e-4], type=float, nargs='+',
+parser.add_argument('--para_lr', default=[1e-4, 1e-5, 1e-6, 1e-7], type=float, nargs='+',
                     help='step size in parameter update')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum parameter for parameter update')
-parser.add_argument('--patience', default=5, type=int, help='patience for early stopping')
+# parser.add_argument('--patience', default=5, type=int, help='patience for early stopping')
 
 args = parser.parse_args()
 
@@ -115,8 +115,8 @@ if data_source == 'acic':
         train_set, val_set = random_split(data, [train_size, data_size - train_size],
                                           generator=torch.Generator().manual_seed(seed))
 
-train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True)
-val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True)
+train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=16)
+val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=16)
 
 # get input dim
 _, _, x_temp = next(iter(train_data))
@@ -169,9 +169,9 @@ optimizer_list = []
 for i in range(num_hidden + 1):
     optimizer_list.append(SGD(net.module_dict[str(i)].parameters(), lr=para_lrs[i], momentum=para_momentum))
 
-# setting for early stopping
-patience = 5
-trigger_times = 0
+# # setting for early stopping
+# patience = 5
+# trigger_times = 0
 
 # training the network
 train_num_batches = len(train_data)
@@ -234,19 +234,30 @@ for epoch in range(epochs):
         val_accuracy_path[epoch] = val_correct
         print(f"val accuracy: {val_correct:>8f} \n")
 
-    # early stopping
-    if epoch > 0:
-        last_loss = val_loss_path[epoch - 1]
-        current_loss = val_loss
-        if current_loss > last_loss:
-            trigger_times += 1
-            if trigger_times >= patience:
-                print('Early stopping!')
-                break
-        else:
-            trigger_times = 0
+    torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(epoch)+'.pt'))
+    # # early stopping
+    # if epoch > 0:
+    #     if regression_flag is True:
+    #         last_loss = val_loss_path[epoch - 1]
+    #         current_loss = val_loss
+    #         if current_loss > last_loss:
+    #             trigger_times += 1
+    #             if trigger_times >= patience:
+    #                 print('Early stopping!')
+    #             break
+    #         else:
+    #             trigger_times = 0
+    #     else:
+    #         last_accuracy = val_accuracy_path[epoch-1]
+    #         current_accuracy = val_correct
+    #         if current_accuracy <= last_accuracy:
+    #             trigger_times += 1
+    #             if trigger_times >= patience:
+    #                 print('Early stopping!')
+    #                 break
+    #         else:
+    #             trigger_times = 0
 
-torch.save(net.state_dict(), os.path.join(PATH, 'model.pt'))
 np.savetxt(os.path.join(PATH, 'train_loss.txt'), train_loss_path, fmt="%s")
 np.savetxt(os.path.join(PATH, 'val_loss.txt'), val_loss_path, fmt="%s")
 if regression_flag is False:

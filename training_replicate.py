@@ -7,6 +7,8 @@ from torchtext.data import to_map_style_dataset
 from torch.optim import SGD
 import numpy as np
 import argparse
+import os
+import errno
 
 parser = argparse.ArgumentParser(description='Running stonet')
 parser.add_argument('--seed', default=1, type=int, help='set seed')
@@ -33,7 +35,7 @@ parser.add_argument('--sigma', default=[1e-6, 1e-5, 1e-4, 1e-3], type=float, nar
                     help='variance of each layer for the model')
 
 # Training Setting
-parser.add_argument('--nepoch', default=100, type=int, help='total number of training epochs')
+parser.add_argument('--nepoch', default=1000, type=int, help='total number of training epochs')
 parser.add_argument('--batch_size', default=50, type=int, help='batch size for training')
 
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
@@ -70,15 +72,15 @@ if regression_flag:
     loss_sum = nn.MSELoss(reduction='sum')
     output_dim = 1
     train_loss_path = np.zeros(epochs)
-    test_loss_path = np.zeros(epochs)
+    val_loss_path = np.zeros(epochs)
 else:
     loss = nn.CrossEntropyLoss()
     loss_sum = nn.CrossEntropyLoss(reduction='sum')
     output_dim = 2  # for binary classification; change accordingly for multi-level classification
     train_loss_path = np.zeros(epochs)
-    test_loss_path = np.zeros(epochs)
+    val_loss_path = np.zeros(epochs)
     train_accuracy_path = np.zeros(epochs)
-    test_accuracy_path = np.zeros(epochs)
+    val_accuracy_path = np.zeros(epochs)
 
 # simulation dataset
 if data_source == 'sim':
@@ -104,8 +106,8 @@ if data_source == 'acic':
         train_set, val_set = random_split(data, [train_size, data_size - train_size],
                                           generator=torch.Generator().manual_seed(seed))
 
-train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True)
-val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True)
+train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=16)
+val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=16)
 
 # get input dim and output dim
 y_temp, treat, x_temp = next(iter(train_data))
@@ -142,6 +144,23 @@ if len(sigma_list) == 1 and num_hidden > 1:
     for i in range(num_hidden + 1):
         sigma_list.append(temp_sigma_list)
 
+# path to save the result
+if regression_flag is True:
+    base_path = os.path.join('.', 'stonet', 'result', data_source, 'regression')
+else:
+    base_path = os.path.join('.', 'stonet', 'result', data_source, 'classification', data_name)
+spec = str(impute_lrs) + '_' + str(para_lrs) + '_' + str(hidden_dim) + '_' + str(epochs)
+PATH = os.path.join(base_path, spec)
+
+if not os.path.isdir(PATH):
+    try:
+        os.makedirs(PATH)
+    except OSError as exc:  # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(PATH):
+            pass
+        else:
+            raise
+
 # define optimizer
 optimizer_list = []
 for i in range(num_hidden + 1):
@@ -150,8 +169,8 @@ for i in range(num_hidden + 1):
 # training the network
 train_num_batches = len(train_data)
 train_size = train_set.__len__()
-test_num_batches = len(val_data)
-test_size = val_set.__len__()
+val_num_batches = len(val_data)
+val_size = val_set.__len__()
 
 for epoch in range(epochs):
     print("Epoch" + str(epoch))
@@ -185,20 +204,28 @@ for epoch in range(epochs):
         train_correct /= train_size
         print(f"train accuracy: {train_correct:>8f} \n")
 
-    # test loop
-    test_loss, test_correct = 0, 0
+    # validation loop
+    val_loss, val_correct = 0, 0
     with torch.no_grad():
         for y, treat, x in val_data:
             pred = net.forward(x)
             loss_new = loss(pred, y).item()
-            test_loss += loss_new
+            val_loss += loss_new
             if regression_flag is False:
-                test_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+                val_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
 
-    test_loss /= test_num_batches
-    test_loss_path[epoch] = test_loss
-    print(f"Avg test loss: {test_loss:>8f} \n")
+    val_loss /= val_num_batches
+    val_loss_path[epoch] = val_loss
+    print(f"Avg val loss: {val_loss:>8f} \n")
     if regression_flag is False:
-        test_correct /= test_size
-        test_accuracy_path[epoch] = test_correct
-        print(f"accuracy: {test_correct:>8f} \n")
+        val_correct /= val_size
+        val_accuracy_path[epoch] = val_correct
+        print(f"accuracy: {val_correct:>8f} \n")
+
+    torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(epoch)+'.pt'))
+
+np.savetxt(os.path.join(PATH, 'train_loss.txt'), train_loss_path, fmt="%s")
+np.savetxt(os.path.join(PATH, 'val_loss.txt'), val_loss_path, fmt="%s")
+if regression_flag is False:
+    np.savetxt(os.path.join(PATH, 'train_accuracy.txt'), train_accuracy_path, fmt="%s")
+    np.savetxt(os.path.join(PATH, 'val_accuracy.txt'), val_accuracy_path, fmt="%s")
