@@ -38,7 +38,7 @@ parser.add_argument('--treat_node', default=1, type=int, help='the position of t
 
 # Training Setting
 parser.add_argument('--nepoch', default=1000, type=int, help='total number of training epochs')
-parser.add_argument('--batch_size', default=50, type=int, help='batch size for training')
+parser.add_argument('--batch_size', default=64, type=int, help='batch size for training')
 
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
 parser.add_argument('--impute_lr', default=[0.0000001], type=float, nargs='+', help='step size in imputation')
@@ -115,8 +115,8 @@ if data_source == 'acic':
         train_set, val_set = random_split(data, [train_size, data_size - train_size],
                                           generator=torch.Generator().manual_seed(seed))
 
-train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=16)
-val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=16)
+train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=32)
+val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=32)
 
 # get input dim
 _, _, x_temp = next(iter(train_data))
@@ -189,15 +189,13 @@ for epoch in range(epochs):
 
         # parameter update
         for p in net.parameters():
-            if p.grad is not None:
-                p.grad.zero_()
+            p.grad = None
 
         adj_factor = batch_size / train_size
         for layer_index in range(num_hidden + 1):
             hidden_likelihood = -adj_factor * net.likelihood("p", hidden_list, layer_index, loss_sum, sigma_list, x, y,
                                                              treat)
             optimizer = optimizer_list[layer_index]
-            optimizer.zero_grad()
             hidden_likelihood.backward()
             optimizer.step()
 
