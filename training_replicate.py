@@ -200,6 +200,7 @@ for epoch in range(epochs):
     print(f"Avg train loss: {train_loss:>8f} \n")
     if regression_flag is False:
         train_correct /= train_size
+        train_accuracy_path[epoch] = train_correct
         print(f"train accuracy: {train_correct:>8f} \n")
 
     # validation loop
