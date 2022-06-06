@@ -174,7 +174,6 @@ val_size = val_set.__len__()
 
 for epoch in range(epochs):
     print("Epoch" + str(epoch))
-    train_loss, train_correct = 0, 0
     for batch, (y, treat, x) in enumerate(train_data):
         batch_size = y.size(dim=0)
         hidden_list = net.backward_imputation(mh_step, impute_lrs, ita, loss_sum, sigma_list, x, y)
@@ -189,7 +188,9 @@ for epoch in range(epochs):
             hidden_likelihood.backward()
             optimizer.step()
 
-        with torch.no_grad():
+    train_loss, train_correct = 0, 0
+    with torch.no_grad():
+        for batch, (y, treat, x) in enumerate(train_data):
             pred = net.forward(x)
             train_loss += loss(pred, y).item()
             if regression_flag is False:
