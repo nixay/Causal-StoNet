@@ -10,7 +10,7 @@ import json
 import argparse
 
 parser = argparse.ArgumentParser(description='Simulation of Causal StoNet with sparsity')
-parser.add_argument('--seed', default=1, type=int, help='set seed')
+parser.add_argument('--seed', default=2, type=int, help='set seed')
 parser.add_argument('--regression', dest='regression_flag', action='store_true', help='true for regression')
 parser.add_argument('--classification', dest='regression_flag', action='store_false', help='false for classification')
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
@@ -153,7 +153,7 @@ else:
     output_dim = 2
 
 # load data for training
-batch_size = 50
+batch_size = 500
 if regression_flag:
     data = SimStoNet_Cont(seed, 10, 1000, 11000)
     train_set, val_set = random_split(data, [10000, 1000],
@@ -163,8 +163,8 @@ else:
     train_set, val_set = random_split(data, [10000, 1000],
                                       generator=torch.Generator().manual_seed(seed))
 
-train_data = DataLoader(train_set, batch_size=500, shuffle=True, num_workers=num_workers)
-val_data = DataLoader(val_set, batch_size=500, shuffle=True, num_workers=num_workers)
+train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
 _, _, x_temp = next(iter(train_data))
 input_dim = x_temp[0].size(dim=0)
@@ -180,10 +180,10 @@ sigma_list = [1e-5, 1e-4, 1e-3, 1e-2]
 # training parameters
 para_momentum = 0.9
 para_lrs = [1e-4, 1e-5, 1e-6, 1e-7]
-training_epochs = 80000
+training_epochs = 400
 
 # sparsity parameters
-fine_tune_epoch = 40000
+fine_tune_epoch = 200
 prior_sigma_0 = 0.0005
 prior_sigma_1 = 0.01
 lambda_n = 0.00001
@@ -209,7 +209,8 @@ if regression_flag:
     base_path = os.path.join('.', 'stonet_sparsity', 'result', 'sim', 'regression')
 else:
     base_path = os.path.join('.', 'stonet_sparsity', 'result', 'sim', 'classification')
-spec = str(impute_lrs) + '_' + str(para_lrs) + '_' + str(hidden_dim) + str(training_epochs) + str(fine_tune_epoch)
+spec = str(impute_lrs) + '_' + str(para_lrs) + '_' + str(hidden_dim) + '_' + str(training_epochs) + '_' + \
+       str(fine_tune_epoch)
 base_path = os.path.join(base_path, spec)
 
 
@@ -253,6 +254,9 @@ def optimization(net, epochs):
     train_num_batches = len(train_data)
     val_num_batches = len(val_data)
 
+    # save hidden likelihood for to calculate BIC
+    hidden_likelihood = np.zeros(num_hidden+1)
+
     for epoch in range(epochs):
         print("Epoch" + str(epoch))
         # train loop
@@ -273,7 +277,9 @@ def optimization(net, epochs):
 
             adj_factor = batch_size / train_size
             for layer_index in range(num_hidden + 1):  # data likelihood gradient. update layer by layer
-                likelihood = -adj_factor * net.likelihood("p", hidden_list, layer_index, loss_sum, sigma_list, x, y)
+                likelihood = net.likelihood("p", hidden_list, layer_index, loss_sum, sigma_list, x, y)
+                hidden_likelihood[layer_index] = likelihood
+                likelihood = -adj_factor * likelihood
                 optimizer = optimizer_list[layer_index]
                 likelihood.backward()
                 optimizer.step()
@@ -328,7 +334,7 @@ def optimization(net, epochs):
         var_gamma[str(epoch)] = variable_selected.tolist()
         print('number of selected input variable:', num_selected)
 
-    return para_path, para_gamma_path, var_gamma, performance
+    return para_path, para_gamma_path, var_gamma, performance, hidden_likelihood
 
 
 def main():
@@ -342,6 +348,7 @@ def main():
         val_accuracy_list = np.zeros([num_seed])
 
     for prune_seed in range(num_seed):
+        print('number of runs', prune_seed)
         # path to save the result
         PATH = os.path.join(base_path, str(prune_seed))
         if not os.path.isdir(PATH):
@@ -358,7 +365,7 @@ def main():
         torch.manual_seed(prune_seed)
         net = Net(num_hidden, hidden_dim, input_dim, output_dim, treat_depth, treat_node)
 
-        para_train, para_gamma_train, var_gamma_train, performance_train = optimization(net, training_epochs)
+        para_train, para_gamma_train, var_gamma_train, performance_train, _ = optimization(net, training_epochs)
 
         # prune network parameters
         with torch.no_grad():
@@ -397,7 +404,8 @@ def main():
         performance_file.close()
 
         # refine non-zero network parameters
-        para_fine_tune, para_gamma_fine_tune, var_gamma_fine_tune, performance_fine_tune = optimization(net, fine_tune_epoch)
+        para_fine_tune, para_gamma_fine_tune, var_gamma_fine_tune, performance_fine_tune, likelihoods\
+            = optimization(net, fine_tune_epoch)
 
         # save fine tuning results
         for name, para in net.named_parameters():
@@ -432,9 +440,10 @@ def main():
             num_non_zero_element = 0
             for name, para in net.named_parameters():
                 num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
-            BIC = (2 * train_size * train_loss + np.log(train_size) * num_non_zero_element).item()
-            BIC_list[prune_seed] = BIC
             dim_list[prune_seed] = num_non_zero_element
+
+            BIC = (np.log(train_size) *num_non_zero_element - 2 * np.sum(likelihoods)).item()
+            BIC_list[prune_seed] = BIC
 
             print("number of non-zero connections:", num_non_zero_element)
             print('BIC:', BIC)
