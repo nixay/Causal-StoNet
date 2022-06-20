@@ -10,10 +10,14 @@ import json
 import argparse
 
 parser = argparse.ArgumentParser(description='Simulation of Causal StoNet with sparsity')
-parser.add_argument('--seed', default=2, type=int, help='set seed')
+parser.add_argument('--seed', default=1, type=int, help='set seed')
 parser.add_argument('--regression', dest='regression_flag', action='store_true', help='true for regression')
 parser.add_argument('--classification', dest='regression_flag', action='store_false', help='false for classification')
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
+parser.add_argument('--train_size', default=10000, type=int, help='size of training set')
+parser.add_argument('--val_size', default=5000, type=int, help='size of validation set')
+parser.add_argument('--train_epoch', default=1000, type=int, help='number of training epochs')
+parser.add_argument('--fine_tune_epoch', default=200, type=int, help='number of finetuning epochs')
 
 args = parser.parse_args()
 ########################################################################################################################
@@ -154,13 +158,16 @@ else:
 
 # load data for training
 batch_size = 500
+train_size = args.train_size
+val_size = args.val_size
+data_size = train_size + val_size
 if regression_flag:
-    data = SimStoNet_Cont(seed, 10, 1000, 11000)
-    train_set, val_set = random_split(data, [10000, 1000],
+    data = SimStoNet_Cont(seed, 10, 1000, data_size)
+    train_set, val_set = random_split(data, [train_size, val_size],
                                       generator=torch.Generator().manual_seed(seed))
 else:
-    data = SimStoNet_Bin(seed, 10, 1000, 11000)
-    train_set, val_set = random_split(data, [10000, 1000],
+    data = SimStoNet_Bin(seed, 10, 1000, data_size)
+    train_set, val_set = random_split(data, [train_size, val_size],
                                       generator=torch.Generator().manual_seed(seed))
 
 train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
@@ -180,10 +187,10 @@ sigma_list = [1e-5, 1e-4, 1e-3, 1e-2]
 # training parameters
 para_momentum = 0.9
 para_lrs = [1e-4, 1e-5, 1e-6, 1e-7]
-training_epochs = 400
+training_epochs = args.train_epoch
 
 # sparsity parameters
-fine_tune_epoch = 200
+fine_tune_epoch = args.fine_tune_epoch
 prior_sigma_0 = 0.0005
 prior_sigma_1 = 0.01
 lambda_n = 0.00001
