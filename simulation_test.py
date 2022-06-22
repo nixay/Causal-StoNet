@@ -10,22 +10,26 @@ import json
 import argparse
 
 parser = argparse.ArgumentParser(description='Simulation of Causal StoNet with sparsity')
-parser.add_argument('--seed', default=1, type=int, help='set seed')
+parser.add_argument('--network_seed', default=1, type=int, help='set seed')
+parser.add_argument('--data_seed', default=1, type=int, help='set seed')
 parser.add_argument('--regression', dest='regression_flag', action='store_true', help='true for regression')
 parser.add_argument('--classification', dest='regression_flag', action='store_false', help='false for classification')
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
-parser.add_argument('--train_size', default=10000, type=int, help='size of training set')
+parser.add_argument('--train_size', default=5000, type=int, help='size of training set')
 parser.add_argument('--val_size', default=5000, type=int, help='size of validation set')
-parser.add_argument('--train_epoch', default=1000, type=int, help='number of training epochs')
+parser.add_argument('--train_epoch', default=800, type=int, help='number of training epochs')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='number of finetuning epochs')
+parser.add_argument('--num_seed', default=5, type=int, help='number of runs for each prunening processs')
+parser.add_argument('--batch_size', default=50, type=int, help='batch size')
 
 args = parser.parse_args()
 ########################################################################################################################
 # set seed for generating dataset
-seed = args.seed
+network_seed = args.network_seed
+data_seed = args.data_seed
 
 # set number of runs for the network
-num_seed = 10
+num_seed = args.num_seed
 
 # task
 regression_flag = args.regression_flag
@@ -36,15 +40,16 @@ num_workers = args.num_workers
 # StoNet for generating data
 num_hidden = 3
 treat_layer = 1
-hidden_dim = [8, 4, 2]
+hidden_dim = [4, 3, 2]
 treat_node = 1
-input_dim = 1000
+sim_input_dim = 5
 
 if regression_flag:
     output_dim = 1
 else:
     output_dim = 2
 
+torch.manual_seed(network_seed)
 net_sim = Net(num_hidden, hidden_dim, input_dim, output_dim, treat_layer, treat_node)
 
 class SimStoNet_Cont(Dataset):
@@ -148,7 +153,7 @@ class SimStoNet_Bin(Dataset):
 # network setup
 num_hidden = 3
 treat_depth = 1
-hidden_dim = [16, 8, 4]
+hidden_dim = [6, 4, 3]
 treat_node = 1
 
 if regression_flag:
@@ -157,18 +162,18 @@ else:
     output_dim = 2
 
 # load data for training
-batch_size = 500
+batch_size = args.batch_size
 train_size = args.train_size
 val_size = args.val_size
 data_size = train_size + val_size
 if regression_flag:
-    data = SimStoNet_Cont(seed, 10, 1000, data_size)
+    data = SimStoNet_Cont(data_seed, sim_input_dim, 1000, data_size)
     train_set, val_set = random_split(data, [train_size, val_size],
-                                      generator=torch.Generator().manual_seed(seed))
+                                      generator=torch.Generator().manual_seed(data_seed))
 else:
-    data = SimStoNet_Bin(seed, 10, 1000, data_size)
+    data = SimStoNet_Bin(data_seed, sim_input_dim, 1000, data_size)
     train_set, val_set = random_split(data, [train_size, val_size],
-                                      generator=torch.Generator().manual_seed(seed))
+                                      generator=torch.Generator().manual_seed(data_seed))
 
 train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
@@ -182,7 +187,7 @@ val_size = val_set.__len__()
 impute_lrs = [1e-7, 1e-7, 1e-7]
 ita = 0.5
 mh_step = 1
-sigma_list = [1e-5, 1e-4, 1e-3, 1e-2]
+sigma_list = [1e-6, 1e-5, 1e-4, 1e-3]
 
 # training parameters
 para_momentum = 0.9
@@ -268,6 +273,8 @@ def optimization(net, epochs):
         print("Epoch" + str(epoch))
         # train loop
         for y, treat, x in train_data:
+            print('y', y)
+            print('treat', treat)
             # backward imputation
             hidden_list = net.backward_imputation(mh_step, impute_lrs, ita, loss_sum, sigma_list, x, y, treat)
 
@@ -291,27 +298,12 @@ def optimization(net, epochs):
                 likelihood.backward()
                 optimizer.step()
 
-        train_loss, train_correct = 0, 0
-        with torch.no_grad():
-            for y, treat, x in train_data:
-                pred = net.forward(x, treat)
-                train_loss += loss(pred, y).item()
-                if regression_flag is False:
-                    train_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
-
-        train_loss /= train_num_batches
-        train_loss_path.append(train_loss)
-        print(f"Avg train loss: {train_loss:>8f} \n")
-
-        if regression_flag is False:
-            train_correct /= train_size
-            train_accuracy_path.append(train_correct)
-            print(f"train accuracy: {train_correct:>8f} \n")
-
         # validation loop
         val_loss, val_correct = 0, 0
         with torch.no_grad():
             for y, treat, x in val_data:
+                print('y', y)
+                print('treat', treat)
                 pred = net.forward(x, treat)
                 val_loss += loss(pred, y).item()
                 if regression_flag is False:
