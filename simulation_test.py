@@ -19,7 +19,7 @@ parser.add_argument('--train_size', default=5000, type=int, help='size of traini
 parser.add_argument('--val_size', default=5000, type=int, help='size of validation set')
 parser.add_argument('--train_epoch', default=800, type=int, help='number of training epochs')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='number of finetuning epochs')
-parser.add_argument('--num_seed', default=5, type=int, help='number of runs for each prunening processs')
+parser.add_argument('--num_seed', default=5, type=int, help='number of runs for each pruning processs')
 parser.add_argument('--batch_size', default=50, type=int, help='batch size')
 
 args = parser.parse_args()
@@ -50,7 +50,8 @@ else:
     output_dim = 2
 
 torch.manual_seed(network_seed)
-net_sim = Net(num_hidden, hidden_dim, input_dim, output_dim, treat_layer, treat_node)
+net_sim = Net(num_hidden, hidden_dim, sim_input_dim, output_dim, treat_layer, treat_node)
+
 
 class SimStoNet_Cont(Dataset):
     """
@@ -149,6 +150,7 @@ class SimStoNet_Bin(Dataset):
         treat = self.treat[idx]
         return label, treat, x
 
+
 ########################################################################################################################
 # network setup
 num_hidden = 3
@@ -232,7 +234,7 @@ def optimization(net, epochs):
     net: Net object
         the network to be trained
     epochs: float
-        the number of epochs that the network is trainied for
+        the number of epochs that the network is trained for
     """
     # save parameter values, indicator variables, and selected input
     para_path = {}
@@ -273,8 +275,6 @@ def optimization(net, epochs):
         print("Epoch" + str(epoch))
         # train loop
         for y, treat, x in train_data:
-            print('y', y)
-            print('treat', treat)
             # backward imputation
             hidden_list = net.backward_imputation(mh_step, impute_lrs, ita, loss_sum, sigma_list, x, y, treat)
 
@@ -298,12 +298,27 @@ def optimization(net, epochs):
                 likelihood.backward()
                 optimizer.step()
 
+        train_loss, train_correct = 0, 0
+        with torch.no_grad():
+            for y, treat, x in train_data:
+                pred = net.forward(x, treat)
+                train_loss += loss(pred, y).item()
+                if regression_flag is False:
+                    train_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+
+        train_loss /= train_num_batches
+        train_loss_path.append(train_loss)
+        print(f"Avg train loss: {train_loss:>8f} \n")
+
+        if regression_flag is False:
+            train_correct /= train_size
+            train_accuracy_path.append(train_correct)
+            print(f"train accuracy: {train_correct:>8f} \n")
+
         # validation loop
         val_loss, val_correct = 0, 0
         with torch.no_grad():
             for y, treat, x in val_data:
-                print('y', y)
-                print('treat', treat)
                 pred = net.forward(x, treat)
                 val_loss += loss(pred, y).item()
                 if regression_flag is False:
@@ -339,7 +354,7 @@ def optimization(net, epochs):
 def main():
     dim_list = np.zeros([num_seed])  # total number of non-zero element of the pruned network
     BIC_list = np.zeros([num_seed])
-    num_selection_list = np.zeros([num_seed]) # number of selected input variables
+    num_selection_list = np.zeros([num_seed])  # number of selected input variables
     train_loss_list = np.zeros([num_seed])
     val_loss_list = np.zeros([num_seed])
     if regression_flag is False:
@@ -441,7 +456,7 @@ def main():
                 num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
             dim_list[prune_seed] = num_non_zero_element
 
-            BIC = (np.log(train_size) *num_non_zero_element - 2 * np.sum(likelihoods)).item()
+            BIC = (np.log(train_size) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
             BIC_list[prune_seed] = BIC
 
             print("number of non-zero connections:", num_non_zero_element)
