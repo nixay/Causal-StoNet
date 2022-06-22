@@ -10,14 +10,14 @@ import json
 import argparse
 
 parser = argparse.ArgumentParser(description='Simulation of Causal StoNet with sparsity')
-parser.add_argument('--network_seed', default=1, type=int, help='set seed')
 parser.add_argument('--data_seed', default=1, type=int, help='set seed')
+parser.add_argument('--partition_seed', default=2, type=int, help='set seed')
 parser.add_argument('--regression', dest='regression_flag', action='store_true', help='true for regression')
 parser.add_argument('--classification', dest='regression_flag', action='store_false', help='false for classification')
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
-parser.add_argument('--train_size', default=5000, type=int, help='size of training set')
-parser.add_argument('--val_size', default=5000, type=int, help='size of validation set')
-parser.add_argument('--train_epoch', default=800, type=int, help='number of training epochs')
+parser.add_argument('--train_size', default=10000, type=int, help='size of training set')
+parser.add_argument('--val_size', default=2000, type=int, help='size of validation set')
+parser.add_argument('--train_epoch', default=1000, type=int, help='number of training epochs')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='number of finetuning epochs')
 parser.add_argument('--num_seed', default=5, type=int, help='number of runs for each pruning processs')
 parser.add_argument('--batch_size', default=50, type=int, help='batch size')
@@ -25,8 +25,8 @@ parser.add_argument('--batch_size', default=50, type=int, help='batch size')
 args = parser.parse_args()
 ########################################################################################################################
 # set seed for generating dataset
-network_seed = args.network_seed
 data_seed = args.data_seed
+partition_seed = args.partition_seed
 
 # set number of runs for the network
 num_seed = args.num_seed
@@ -49,7 +49,6 @@ if regression_flag:
 else:
     output_dim = 2
 
-torch.manual_seed(network_seed)
 net_sim = Net(num_hidden, hidden_dim, sim_input_dim, output_dim, treat_layer, treat_node)
 net_sim.state_dict()['0.weight'][:] = torch.tensor([[2, -1, 1, 0, 0],
                                                     [0, -2, 0, 1, 0],
@@ -185,11 +184,11 @@ data_size = train_size + val_size
 if regression_flag:
     data = SimStoNet_Cont(data_seed, sim_input_dim, 1000, data_size)
     train_set, val_set = random_split(data, [train_size, val_size],
-                                      generator=torch.Generator().manual_seed(data_seed))
+                                      generator=torch.Generator().manual_seed(partition_seed))
 else:
     data = SimStoNet_Bin(data_seed, sim_input_dim, 1000, data_size)
     train_set, val_set = random_split(data, [train_size, val_size],
-                                      generator=torch.Generator().manual_seed(data_seed))
+                                      generator=torch.Generator().manual_seed(partition_seed))
 
 train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
