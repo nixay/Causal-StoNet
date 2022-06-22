@@ -89,7 +89,7 @@ class SimStoNet_Cont(Dataset):
         self.treat = torch.FloatTensor(self.treat)
         self.x = torch.FloatTensor(self.x)
 
-        self.y = net_sim.forward(self.x, self.treat).data
+        self.y = net_sim.forward(self.x[:, :true_input_size], self.treat).data
 
     def __len__(self):
         return int(self.data_size)
@@ -137,7 +137,7 @@ class SimStoNet_Bin(Dataset):
         self.treat = torch.FloatTensor(self.treat)
         self.x = torch.FloatTensor(self.x)
 
-        score = net_sim.forward(self.x, self.treat).data
+        score = net_sim.forward(self.x[:, :true_input_size], self.treat).data
         label_temp = score.argmax(1)
         self.label = torch.LongTensor(label_temp)
 
