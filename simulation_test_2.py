@@ -22,9 +22,10 @@ parser.add_argument('--train_size', default=10000, type=int, help='size of train
 parser.add_argument('--val_size', default=2000, type=int, help='size of validation set')
 parser.add_argument('--batch_size', default=500, type=int, help='batch size')
 # training setting
-parser.add_argument('--train_epoch', default=2000, type=int, help='number of training epochs')
-parser.add_argument('--para_lr', default=[1e-5, 1e-6, 1e-7, 1e-8], type=int, help='batch size')
-parser.add_argument('--fine_tune_epoch', default=1000, type=int, help='number of finetuning epochs')
+parser.add_argument('--train_epoch', default=10000, type=int, help='number of training epochs')
+parser.add_argument('--para_lr_train', default=[1e-5, 1e-6, 1e-7, 1e-8], type=int, help='batch size')
+parser.add_argument('--para_lr_fine_tune', default=[5e-6, 5e-7, 5e-8, 5e-9], type=int, help='batch size')
+parser.add_argument('--fine_tune_epoch', default=200, type=int, help='number of finetuning epochs')
 parser.add_argument('--num_seed', default=5, type=int, help='number of runs for each pruning processs')
 
 
@@ -56,17 +57,17 @@ else:
     output_dim = 2
 
 net_sim = Net(num_hidden, hidden_dim, sim_input_dim, output_dim, treat_layer, treat_node)
-net_sim.state_dict()['0.weight'][:] = torch.tensor([[2, -1, 1, 0, 0],
-                                                    [0, -2, 0, 1, 0],
-                                                    [1, 0, 0, 2, -2],
-                                                    [-1, 1, 2, -1, 1]])
+net_sim.state_dict()['0.weight'][:] = torch.tensor([[2, -1, 0, 0, 0],
+                                                    [0, 0, 1, 0, 0],
+                                                    [0, 0, 0, 2, 0],
+                                                    [0, 0, 0, 0, 1]])
 net_sim.state_dict()['0.bias'][:] = torch.zeros_like(net_sim.state_dict()['0.bias'])
-net_sim.state_dict()['1.1.weight'][:] = torch.tensor([[0, 2, -1, 0],
-                                                      [1, 0, -2, -1],
-                                                      [-1, 1, 2, 0]])
+net_sim.state_dict()['1.1.weight'][:] = torch.tensor([[2, 0, 0, 0],
+                                                      [0, 1, -2, 0],
+                                                      [0, 0, 0, -1]])
 net_sim.state_dict()['1.1.bias'][:] = torch.zeros_like(net_sim.state_dict()['1.1.bias'])
-net_sim.state_dict()['2.1.weight'][:] = torch.tensor([[0, 2, 1],
-                                                      [1, -1, 0]])
+net_sim.state_dict()['2.1.weight'][:] = torch.tensor([[2, 0, 0],
+                                                      [0, -1, 1]])
 net_sim.state_dict()['2.1.bias'][:] = torch.zeros_like(net_sim.state_dict()['2.1.bias'])
 net_sim.state_dict()['3.1.weight'][:] = torch.tensor([[1, 2]])
 net_sim.state_dict()['3.1.bias'][:] = torch.zeros_like(net_sim.state_dict()['3.1.bias'])
@@ -212,7 +213,8 @@ sigma_list = [1e-6, 1e-5, 1e-4, 1e-3]
 
 # training parameters
 para_momentum = 0.9
-para_lrs = args.para_lr
+para_lrs_train = args.para_lr_train
+para_lrs_fine_tune = args.para_lr_fine_tune
 training_epochs = args.train_epoch
 
 # sparsity parameters
@@ -242,18 +244,20 @@ if regression_flag:
     base_path = os.path.join('.', 'stonet_sparsity', 'result', 'sim', 'regression')
 else:
     base_path = os.path.join('.', 'stonet_sparsity', 'result', 'sim', 'classification')
-spec = str(impute_lrs) + '_' + str(para_lrs) + '_' + str(hidden_dim) + '_' + str(training_epochs) + '_' + \
+spec = str(para_lrs_train) + '_' + str(hidden_dim) + '_' + str(training_epochs) + '_' + \
        str(fine_tune_epoch)
 base_path = os.path.join(base_path, spec)
 
 
-def optimization(net, epochs):
+def optimization(net, epochs, para_lrs):
     """
     train the network
     net: Net object
         the network to be trained
     epochs: float
         the number of epochs that the network is trained for
+    lrs: list of float
+        learning rates
     """
     # save parameter values, indicator variables, and selected input
     para_path = {}
@@ -398,7 +402,8 @@ def main():
         torch.manual_seed(prune_seed)
         net = Net(num_hidden, hidden_dim, input_dim, output_dim, treat_depth, treat_node)
 
-        para_train, para_gamma_train, var_gamma_train, performance_train, _ = optimization(net, training_epochs)
+        para_train, para_gamma_train, var_gamma_train, performance_train, _ = optimization(net, training_epochs,
+                                                                                           para_lrs_train)
 
         # prune network parameters
         with torch.no_grad():
@@ -438,7 +443,7 @@ def main():
 
         # refine non-zero network parameters
         para_fine_tune, para_gamma_fine_tune, var_gamma_fine_tune, performance_fine_tune, likelihoods \
-            = optimization(net, fine_tune_epoch)
+            = optimization(net, fine_tune_epoch, para_lrs_fine_tune)
 
         # save fine tuning results
         for name, para in net.named_parameters():
