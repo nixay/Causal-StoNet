@@ -10,17 +10,23 @@ import json
 import argparse
 
 parser = argparse.ArgumentParser(description='Simulation of Causal StoNet with sparsity')
+# simulation setting
 parser.add_argument('--data_seed', default=1, type=int, help='set seed')
 parser.add_argument('--partition_seed', default=2, type=int, help='set seed')
+# task
 parser.add_argument('--regression', dest='regression_flag', action='store_true', help='true for regression')
 parser.add_argument('--classification', dest='regression_flag', action='store_false', help='false for classification')
+# dataloader setting
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
 parser.add_argument('--train_size', default=10000, type=int, help='size of training set')
 parser.add_argument('--val_size', default=2000, type=int, help='size of validation set')
-parser.add_argument('--train_epoch', default=1000, type=int, help='number of training epochs')
-parser.add_argument('--fine_tune_epoch', default=200, type=int, help='number of finetuning epochs')
+parser.add_argument('--batch_size', default=500, type=int, help='batch size')
+# training setting
+parser.add_argument('--train_epoch', default=2000, type=int, help='number of training epochs')
+parser.add_argument('--para_lr', default=[1e-5, 1e-6, 1e-7, 1e-8], type=int, help='batch size')
+parser.add_argument('--fine_tune_epoch', default=1000, type=int, help='number of finetuning epochs')
 parser.add_argument('--num_seed', default=5, type=int, help='number of runs for each pruning processs')
-parser.add_argument('--batch_size', default=50, type=int, help='batch size')
+
 
 args = parser.parse_args()
 ########################################################################################################################
@@ -206,7 +212,7 @@ sigma_list = [1e-6, 1e-5, 1e-4, 1e-3]
 
 # training parameters
 para_momentum = 0.9
-para_lrs = [1e-4, 1e-5, 1e-6, 1e-7]
+para_lrs = args.para_lr
 training_epochs = args.train_epoch
 
 # sparsity parameters
