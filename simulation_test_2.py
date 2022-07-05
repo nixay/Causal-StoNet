@@ -23,8 +23,8 @@ parser.add_argument('--val_size', default=2000, type=int, help='size of validati
 parser.add_argument('--batch_size', default=500, type=int, help='batch size')
 # training setting
 parser.add_argument('--train_epoch', default=10000, type=int, help='number of training epochs')
-parser.add_argument('--para_lr_train', default=[1e-5, 1e-6, 1e-7, 1e-8], type=int, help='batch size')
-parser.add_argument('--para_lr_fine_tune', default=[5e-6, 5e-7, 5e-8, 5e-9], type=int, help='batch size')
+parser.add_argument('--para_lr_train', default=[1e-5, 1e-6, 1e-7, 1e-8], type=float, nargs='+', help='batch size')
+parser.add_argument('--para_lr_fine_tune', default=[5e-6, 5e-7, 5e-8, 5e-9], type=float, nargs='+', help='batch size')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='number of finetuning epochs')
 parser.add_argument('--num_seed', default=5, type=int, help='number of runs for each pruning processs')
 
