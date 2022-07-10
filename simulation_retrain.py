@@ -27,6 +27,7 @@ parser.add_argument('--para_lr_train', default=[1e-5, 1e-6, 1e-7, 1e-8], type=fl
 parser.add_argument('--para_lr_fine_tune', default=[5e-6, 5e-7, 5e-8, 5e-9], type=float, nargs='+', help='batch size')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='number of finetuning epochs')
 parser.add_argument('--model_para_path', type=str, help='path to retrieve model paramters')
+parser.add_argument('--lambda_n', default=1e-6, type=float, help='lambda in prior')
 
 
 args = parser.parse_args()
@@ -218,7 +219,7 @@ training_epochs = args.train_epoch
 fine_tune_epoch = args.fine_tune_epoch
 prior_sigma_0 = 0.0005
 prior_sigma_1 = 0.01
-lambda_n = 0.00001
+lambda_n = args.lambda_n
 
 # parameter prior
 c1 = np.log(lambda_n) - np.log(1 - lambda_n) + 0.5 * np.log(prior_sigma_0) - 0.5 * np.log(prior_sigma_1)
