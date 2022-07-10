@@ -27,6 +27,7 @@ parser.add_argument('--para_lr_train', default=[1e-5, 1e-6, 1e-7, 1e-8], type=fl
 parser.add_argument('--para_lr_fine_tune', default=[5e-6, 5e-7, 5e-8, 5e-9], type=float, nargs='+', help='batch size')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='number of finetuning epochs')
 parser.add_argument('--num_seed', default=5, type=int, help='number of runs for each pruning processs')
+parser.add_argument('--lambda_n', default=1e-6, type=float, help='lambda in prior')
 
 
 args = parser.parse_args()
@@ -221,7 +222,7 @@ training_epochs = args.train_epoch
 fine_tune_epoch = args.fine_tune_epoch
 prior_sigma_0 = 0.0005
 prior_sigma_1 = 0.01
-lambda_n = 0.00001
+lambda_n = args.lambda_n
 
 # parameter prior
 c1 = np.log(lambda_n) - np.log(1 - lambda_n) + 0.5 * np.log(prior_sigma_0) - 0.5 * np.log(prior_sigma_1)
@@ -247,7 +248,6 @@ else:
 spec = str(para_lrs_train) + '_' + str(hidden_dim) + '_' + str(training_epochs) + '_' + \
        str(fine_tune_epoch)
 base_path = os.path.join(base_path, spec)
-
 
 def optimization(net, epochs, para_lrs):
     """
@@ -366,6 +366,8 @@ def optimization(net, epochs, para_lrs):
         for i, (name, para) in enumerate(net.named_parameters()):
             if i % 2 == 0 and i > 0:
                 var_ind = np.matmul(para_gamma_path[name][str(epoch)], var_ind)
+                if i/2 == treat_layer:
+                    var_ind[treat_node, :] = 0
         variable_selected = np.max(var_ind, 0)
         num_selected = np.sum(variable_selected)
         var_gamma[str(epoch)] = variable_selected.tolist()
