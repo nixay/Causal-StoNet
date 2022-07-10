@@ -94,6 +94,10 @@ class Net(nn.Module):
         y: tensor
             output of the network.
         """
+        if self.prune_flag == 1:
+            for name, para in self.named_parameters():
+                para.data[self.mask[name]] = 0
+
         if mode == "l":  # latent sampling
             for i in range(self.num_hidden):
                 hidden_list[i].requires_grad = True
