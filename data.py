@@ -1,11 +1,8 @@
-from torch.utils.data import Dataset
 from torchdata.datapipes.iter import FileLister, FileOpener
 import pandas as pd
 import os
 import numpy as np
-import torch
 import functools
-import random
 
 
 # Load ACIC data for training and validation
@@ -49,7 +46,7 @@ def row_processor_bin(row):
     return label, treat, x
 
 
-def acic_data(data_type, subset, data_name):
+def acic_data(data_type, data_name):
     """
     Load ACIC data.
 
@@ -57,9 +54,6 @@ def acic_data(data_type, subset, data_name):
         the data type of outcome variable.
         'cont': continuous variable.
         'bin': binary variable.
-    subset: bool
-        For data with continuous outcome variable.
-        When set to be true, a subset of data will used to train the model. Default is false.
     data_name: str
         For data with binary outcome variable.
         Specify the data source.
@@ -68,12 +62,7 @@ def acic_data(data_type, subset, data_name):
     """
     # select the csv files to be loaded
     if data_type == 'cont':
-        if subset is True:
-            dgp = random.randint(1, 17)
-            file_names_list = file_names_cont_subset(dgp)
-        else:
-            file_names_list = file_names_cont()
-
+        file_names_list = file_names_cont()
     if data_type == 'bin':
         file_names_list = file_names_bin(data_name)
     fn = functools.partial(data_filter, file_names=file_names_list)
@@ -142,99 +131,3 @@ def acic_data_test(data_type):
     if data_type == 'bin':
         data_pipe = data_pipe.map(row_processor_bin_test)
     return data_pipe
-
-
-# create simulation data
-class SimulationData_Cont(Dataset):
-    """
-    simulation dataset with continuous outcome variable
-
-    seed: float
-        random seed
-    size: float
-        size of the simulation dataset
-    """
-    def __init__(self, seed, size):
-        self.seed = seed
-        self.size = size
-        self.treat, self.x, self.y = [], [], []
-
-    def generate_data(self):
-        sigma = 1.0
-        np.random.seed(self.seed)
-        torch.manual_seed(self.seed)
-        for i in range(int(self.size)):
-            treat_temp = np.float32(np.random.binomial(1, 0.5))
-
-            ee = np.sqrt(sigma) * np.random.normal(0, 1)
-            x_temp = np.repeat(ee, 5)
-            for j in range(5):
-                x_temp[j] += np.sqrt(sigma) * np.random.normal(0, 1)
-            x_temp /= np.sqrt(2)
-
-            y_temp = 5 * x_temp[1] / (1 + x_temp[0] * x_temp[0]) + 5 * np.sin(x_temp[2] * x_temp[3]) + 2 * x_temp[
-                4] + np.random.normal(0, 1)
-            y_temp = np.reshape(y_temp, 1)
-
-            self.treat.append(treat_temp)
-            self.x.append(x_temp.astype('float32'))
-            self.y.append(y_temp.astype('float32'))
-        return self.treat, self.y, self.x
-
-    def __len__(self):
-        return int(self.size)
-
-    def __getitem__(self, idx):
-        self.generate_data()
-        y = self.y[idx]
-        treat = self.treat[idx]
-        x = self.x[idx]
-        return y, treat, x
-
-
-class SimulationData_Bin(Dataset):
-    """
-    simulation dataset with binary outcome variable.
-
-    seed: float
-        random seed
-    size: float
-        size of the simulation dataset
-    """
-    def __init__(self, seed, size):
-        self.seed = seed
-        self.size = size
-        self.treat, self.x, self.label = [], [], []
-
-    def generate_data(self):
-        sigma = 1.0
-        np.random.seed(self.seed)
-        torch.manual_seed(self.seed)
-        for i in range(int(self.size)):
-            treat_temp = np.float32(np.random.binomial(1, 0.5))
-
-            ee = np.sqrt(sigma) * np.random.normal(0, 1)
-            x_temp = np.repeat(ee, 5)
-            for j in range(5):
-                x_temp[j] += np.sqrt(sigma) * np.random.normal(0, 1)
-            x_temp /= np.sqrt(2)
-
-            score = 5 * x_temp[1] / (1 + x_temp[0] * x_temp[0]) + 5 * np.sin(x_temp[2] * x_temp[3]) + 2 * x_temp[
-                4] + np.random.normal(0, 1)
-            prob = np.exp(score) / (1 + np.exp(score))
-            label_temp = np.random.binomial(1, prob)
-
-            self.treat.append(treat_temp)
-            self.x.append(x_temp.astype('float32'))
-            self.label.append(label_temp)
-        return self.treat, self.x, self.label
-
-    def __len__(self):
-        return int(self.size)
-
-    def __getitem__(self, idx):
-        self.generate_data()
-        label = self.label[idx]
-        treat = self.treat[idx]
-        x = self.x[idx]
-        return label, treat, x
