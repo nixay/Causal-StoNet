@@ -63,14 +63,14 @@ net_sim.state_dict()['0.weight'][:] = torch.tensor([[2, -1, 0, 0, 0],
                                                     [0, 0, 0, 2, 0],
                                                     [0, 0, 0, 0, 1]])
 net_sim.state_dict()['0.bias'][:] = torch.zeros_like(net_sim.state_dict()['0.bias'])
-net_sim.state_dict()['1.1.weight'][:] = torch.tensor([[2, 0, 0, 0],
-                                                      [0, 1, -2, 0],
-                                                      [0, 0, 0, -1]])
+net_sim.state_dict()['1.1.weight'][:] = torch.tensor([[2, 0, -1, 0],
+                                                      [1, -2, 1, -1],
+                                                      [0, -1, 0, 1]])
 net_sim.state_dict()['1.1.bias'][:] = torch.zeros_like(net_sim.state_dict()['1.1.bias'])
-net_sim.state_dict()['2.1.weight'][:] = torch.tensor([[2, 0, 0],
-                                                      [0, -1, 1]])
+net_sim.state_dict()['2.1.weight'][:] = torch.tensor([[1, 2, 0],
+                                                      [0, 0, 1]])
 net_sim.state_dict()['2.1.bias'][:] = torch.zeros_like(net_sim.state_dict()['2.1.bias'])
-net_sim.state_dict()['3.1.weight'][:] = torch.tensor([[1, 2]])
+net_sim.state_dict()['3.1.weight'][:] = torch.tensor([[1, -1]])
 net_sim.state_dict()['3.1.bias'][:] = torch.zeros_like(net_sim.state_dict()['3.1.bias'])
 
 
