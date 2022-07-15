@@ -11,8 +11,8 @@ import argparse
 
 parser = argparse.ArgumentParser(description='Simulation of Causal StoNet with sparsity')
 # simulation setting
-parser.add_argument('--data_seed', default=1, type=int, help='set seed')
-parser.add_argument('--partition_seed', default=2, type=int, help='set seed')
+parser.add_argument('--data_seed', default=1, type=int, help='set data seed')
+parser.add_argument('--partition_seed', default=1, type=int, help='set dataset partition seed')
 # task
 parser.add_argument('--regression', dest='regression_flag', action='store_true', help='true for regression')
 parser.add_argument('--classification', dest='regression_flag', action='store_false', help='false for classification')
@@ -23,9 +23,11 @@ parser.add_argument('--val_size', default=2000, type=int, help='size of validati
 parser.add_argument('--batch_size', default=500, type=int, help='batch size')
 # training setting
 parser.add_argument('--train_epoch', default=10000, type=int, help='number of training epochs')
-parser.add_argument('--para_lr_train', default=[1e-5, 1e-6, 1e-7, 1e-8], type=float, nargs='+', help='batch size')
-parser.add_argument('--para_lr_fine_tune', default=[5e-6, 5e-7, 5e-8, 5e-9], type=float, nargs='+', help='batch size')
-parser.add_argument('--fine_tune_epoch', default=200, type=int, help='number of finetuning epochs')
+parser.add_argument('--para_lr_train', default=[1e-5, 1e-6, 1e-7, 1e-8], type=float, nargs='+',
+                    help='step size of parameter update for training stage')
+parser.add_argument('--para_lr_fine_tune', default=[5e-6, 5e-7, 5e-8, 5e-9], type=float, nargs='+',
+                    help='step size of parameter update for fine-tuning stage')
+parser.add_argument('--fine_tune_epoch', default=1000, type=int, help='number of finetuning epochs')
 parser.add_argument('--num_seed', default=5, type=int, help='number of runs for each pruning processs')
 parser.add_argument('--lambda_n', default=1e-6, type=float, help='lambda in prior')
 
@@ -246,7 +248,7 @@ if regression_flag:
 else:
     base_path = os.path.join('.', 'stonet_sparsity', 'result', 'sim', 'classification')
 spec = str(para_lrs_train) + '_' + str(hidden_dim) + '_' + str(training_epochs) + '_' + \
-       str(fine_tune_epoch)
+       str(fine_tune_epoch) + '_' + str(data_seed)
 base_path = os.path.join(base_path, spec)
 
 def optimization(net, epochs, para_lrs):
