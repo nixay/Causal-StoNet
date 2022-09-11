@@ -43,7 +43,7 @@ parser.add_argument('--para_lr_train', default=[1e-5, 1e-6, 1e-7, 1e-8], type=fl
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum parameter for parameter update')
 
 # Parameters for Sparsity
-# parser.add_argument('--num_run', default=1, type=int, help='Number of different initialization used to train the model')
+parser.add_argument('--num_run', default=1, type=int, help='Number of different initialization used to train the model')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
 parser.add_argument('--para_lr_fine_tune', default=[5e-6, 5e-7, 5e-8, 5e-9], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
