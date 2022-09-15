@@ -274,13 +274,13 @@ def optimization(net, train_data, val_data, epochs, para_lrs):
         val_loss_path.append(val_loss)
         print(f"Avg val loss: {val_loss:>8f} \n")
 
-        # toc = time.time()
-        # print("optimization time", toc-tic)
+        #toc = time.time()
+        #print("optimization time", toc-tic)
 
         # save parameter values and select connections
         for name, para in net.named_parameters():
-            para_path[name][str(epoch)] = para.data.numpy()
-            para_gamma_path[name][str(epoch)] = (para.abs() > threshold).data.numpy()
+            para_path[name][str(epoch)] = para.cpu().data.numpy()
+            para_gamma_path[name][str(epoch)] = (para.abs() > threshold).cpu().data.numpy()
 
         # select input variable
         var_ind = para_gamma_path['0.weight'][str(epoch)]
@@ -313,11 +313,8 @@ def main():
     # load training data and validation data
     num_workers = args.num_workers
     batch_size = args.batch_size
-    pin_memory = False
-    if device.type == 'cuda':
-        pin_memory = True
-    train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
-    val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
+    train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
     # network setup
     num_hidden = args.layer
