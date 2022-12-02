@@ -15,6 +15,7 @@ parser = argparse.ArgumentParser(description='Tune Causal StoNet for Sparsity')
 # simulation setting
 parser.add_argument('--data_seed', default=1, type=int, help='set seed for data generation')
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
+parser.add_argument('--data_name', default = 'cor', type=str, help='name of simulation dataset')
 
 # dataset setting
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
@@ -46,7 +47,7 @@ parser.add_argument('--temperature', default=2, type=float, help="temperature pa
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
-parser.add_argument('--para_lr_fine_tune', default=[1e-4, 1e-6, 1e-9, 1e-13], type=float, nargs='+',
+parser.add_argument('--para_lr_fine_tune', default=[3e-4, 3e-6, 3e-8, 3e-13], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
 # prior setting
 parser.add_argument('--sigma0', default=2e-5, type=float, help='sigma_0^2 in prior')
@@ -73,8 +74,13 @@ def main():
     train_size = args.train_size
     val_size = args.val_size
     test_size = args.test_size
+    data_name = args.data_name
 
-    data = SimData_Causal_Ind(input_dim, data_seed, train_size + val_size + test_size)
+    if data_name == "cor":
+        data = SimData_Causal(input_dim, data_seed, train_size + val_size + test_size)
+    else:
+        data = SimData_Causal_Ind(input_dim, data_seed, train_size + val_size + test_size)
+
     train_set, val_set, test_set = random_split(data, [train_size, val_size, test_size],
                                       generator=torch.Generator().manual_seed(partition_seed))
 
@@ -123,7 +129,7 @@ def main():
     ate_list[-1] = data.true_ate()
 
     # path to save the result
-    base_path = os.path.join('.', 'stonet_causal_sparsity', 'result', 'sim', 'ind', str(data_seed))
+    base_path = os.path.join('.', 'stonet_causal_sparsity', 'result', 'sim', data_name, str(data_seed))
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
