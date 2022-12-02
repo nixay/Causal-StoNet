@@ -1,5 +1,5 @@
 from network import StoNet_Causal
-from simulation_data import SimData_Causal
+from simulation_data import SimData_Causal, SimData_Causal_Ind
 from stonet_causal_training import training
 from torch.utils.data import DataLoader, random_split
 import torch
@@ -27,31 +27,31 @@ parser.add_argument('--batch_size', default=100, type=int, help='batch size')
 # model
 parser.add_argument('--layer', default=3, type=int, help='number of hidden layer (not including the treatment layer')
 parser.add_argument('--unit', default=[6, 4, 3], type=int, nargs='+', help='number of hidden unit in each layer')
-parser.add_argument('--sigma', default=[1e-3, 1e-4, 1e-5, 1e-6], type=float, nargs='+',
+parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nargs='+',
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
 
 # training setting
 parser.add_argument('--pretrain_epoch', default=100, type=int, help='total number of pretraining epochs')
-parser.add_argument('--train_epoch', default=1000, type=int, help='total number of training epochs')
+parser.add_argument('--train_epoch', default=1500, type=int, help='total number of training epochs')
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
-parser.add_argument('--impute_lr', default=[1e-2, 1e-3, 1e-4], type=float, nargs='+', help='step size for SGHMC')
+parser.add_argument('--impute_lr', default=[3e-3, 3e-4, 1e-6], type=float, nargs='+', help='step size for SGHMC')
 parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum weight for SGHMC')
-parser.add_argument('--para_lr_train', default=[1e-3, 1e-4, 1e-6, 1e-9], type=float, nargs='+',
+parser.add_argument('--para_lr_train', default=[3e-3, 3e-5, 3e-7, 3e-12], type=float, nargs='+',
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
 parser.add_argument('--temperature', default=2, type=float, help="temperature parameter for SGHMC")
 
 # Parameters for Sparsity
-parser.add_argument('--num_run', default=1, type=int, help='Number of different initialization used to train the model')
+parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
-parser.add_argument('--para_lr_fine_tune', default=[1e-5, 1e-6, 1e-7, 1e-10], type=float, nargs='+',
+parser.add_argument('--para_lr_fine_tune', default=[1e-4, 1e-6, 1e-9, 1e-13], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
 # prior setting
-parser.add_argument('--sigma0', default=0.001, type=float, help='sigma_0^2 in prior')
-parser.add_argument('--sigma1', default=0.1, type=float, help='sigma_1^2 in prior')
-parser.add_argument('--lambda_n', default=0.000001, type=float, help='lambda_n in prior')
+parser.add_argument('--sigma0', default=2e-5, type=float, help='sigma_0^2 in prior')
+parser.add_argument('--sigma1', default=1e-2, type=float, help='sigma_1^2 in prior')
+parser.add_argument('--lambda_n', default=1e-4, type=float, help='lambda_n in prior')
 
 args = parser.parse_args()
 
@@ -74,7 +74,7 @@ def main():
     val_size = args.val_size
     test_size = args.test_size
 
-    data = SimData_Causal(input_dim, data_seed, train_size + val_size + test_size)
+    data = SimData_Causal_Ind(input_dim, data_seed, train_size + val_size + test_size)
     train_set, val_set, test_set = random_split(data, [train_size, val_size, test_size],
                                       generator=torch.Generator().manual_seed(partition_seed))
 
@@ -123,7 +123,7 @@ def main():
     ate_list[-1] = data.true_ate()
 
     # path to save the result
-    base_path = os.path.join('.', 'stonet_causal_sparsity', 'result', 'sim', str(data_seed))
+    base_path = os.path.join('.', 'stonet_causal_sparsity', 'result', 'sim', 'ind', str(data_seed))
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
@@ -274,7 +274,6 @@ def main():
         var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
         num_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_treat"]
         performance_fine_tune = output_fine_tune["performance"]
-        likelihoods = output_fine_tune["hidden_likelihood"]
 
         # save fine tuning results
         para_gamma_file = open(os.path.join(PATH, 'para_gamma_fine_tune.json'), "w")
@@ -322,8 +321,7 @@ def main():
                 num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
             dim_list[prune_seed] = num_non_zero_element
 
-            # BIC = (np.log(train_size) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
-            BIC = (np.log(train_size) * num_non_zero_element - 2 * train_loss).item()
+            BIC = (train_size * train_loss + np.log(train_size) *num_non_zero_element).item()
             BIC_list[prune_seed] = BIC
 
             print("number of non-zero connections:", num_non_zero_element)

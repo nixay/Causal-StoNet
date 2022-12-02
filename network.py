@@ -64,7 +64,7 @@ class StoNet_Causal(nn.Module):
 
             z_treat = z[:, self.treat_node]
             treat = hidden_list[layer_index][:, self.treat_node]
-            likelihood_treat = -self.treat_loss(z_treat, treat)
+            likelihood_treat = -self.treat_loss(z_treat, treat)/(2 * sigma_list[layer_index])
 
             z_rest_1 = z[:, 0:self.treat_node]
             temp1 = hidden_list[layer_index][:, 0:self.treat_node]
