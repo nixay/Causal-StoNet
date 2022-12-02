@@ -56,8 +56,6 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
             num_selected_treat: number of selected input variables for treatment
     performance: dictionary
             model performance for each epoch
-    hidden_likelihood: list
-            likelihoods for all hidden layers after all the epochs
     impute_lrs: list of floats
             starting value of impute_lrs for refining network weight
     """
@@ -87,9 +85,6 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         for j in range(net.num_hidden + 1):
             # decay para_lr once val_loss is not decreasing
             scheduler_list.append(ReduceLROnPlateau(optimizer_list[j], patience=20, factor=0.95, eps=1e-14))
-
-    # save hidden likelihoods to calculate BIC
-    hidden_likelihood = np.zeros(net.num_hidden+1)
 
     # settings for loss functions
     loss = nn.MSELoss()
@@ -140,7 +135,6 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
             for layer_index in range(net.num_hidden + 1):
                 forward_hidden = net.module_list[0](x)
                 likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, loss_sum, sigma_list, y)/batch_size
-                hidden_likelihood[layer_index] = likelihood
                 optimizer = optimizer_list[layer_index]
                 likelihood.backward()
                 optimizer.step()
@@ -217,7 +211,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                       performance=performance)
     else:
         output = dict(para_path=para_path, para_grad_path=para_grad_path, para_gamma_path=para_gamma_path,
-                      input_gamma_path=input_gamma_path, performance=performance, hidden_likelihood=hidden_likelihood,
+                      input_gamma_path=input_gamma_path, performance=performance,
                       impute_lrs=step_impute_lrs)
 
     return output
