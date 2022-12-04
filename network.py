@@ -42,7 +42,7 @@ class StoNet_Causal(nn.Module):
             x = self.module_list[layer_index + 1](x)
             if layer_index + 1 == self.treat_layer:
                 score = torch.clone(x[:, self.treat_node])
-                ps = np.exp(score)/(1 + np.exp(score))
+                ps = score.exp()/(1 + score.exp())
                 x[:, self.treat_node] = treat
         return x, ps
 
