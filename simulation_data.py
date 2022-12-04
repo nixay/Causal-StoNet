@@ -17,12 +17,12 @@ class SimData_Causal(Dataset):
         self.data_size = data_size
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        np.random.seed(seed)
-
         one_count, zero_count = 0, 0  # count of the samples in treatment group and control group, respectively
         one_treat, one_x, one_y, one_y_count = ([] for _ in range(4))
         zero_treat, zero_x, zero_y, zero_y_count = ([] for _ in range(4))
 
+        np.random.seed(seed)
+        torch.manual_seed(seed)
         while min(one_count, zero_count) < data_size // 2:
             # generate x
             ee = truncnorm.rvs(-10, 10)
@@ -33,7 +33,7 @@ class SimData_Causal(Dataset):
             h11 = np.tanh(2*x_temp[0]-4*x_temp[3])
             h12 = np.tanh(-4*x_temp[0]+2*x_temp[4])
             h13 = np.tanh(4*x_temp[1]+3*x_temp[2])
-            h14 = np.tanh(4*x_temp[3]-3*x_temp[4])
+            h14 = np.tanh(x_temp[3]-3*x_temp[4])
 
             # nodes in the second hidden layer
             h21 = np.tanh(-4*h11+h13)
