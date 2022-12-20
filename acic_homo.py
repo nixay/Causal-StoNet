@@ -11,7 +11,7 @@ import errno
 from torch.optim import SGD
 import json
 
-parser = argparse.ArgumentParser(description='Run Causal StoNet for ACIC data (continuous)')
+parser = argparse.ArgumentParser(description='Run Causal StoNet for ACIC data with homogeneous treatment effect')
 # Basic Setting
 # dataset setting
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
@@ -119,7 +119,7 @@ def main():
     ate_list = np.zeros([num_seed])
 
     # path to save the result
-    base_path = os.path.join('.', 'acic', 'result', str(dgp))
+    base_path = os.path.join('.', 'acic_homo', 'result', str(dgp))
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
@@ -323,7 +323,7 @@ def main():
             print("number of non-zero connections:", num_non_zero_element)
             print('BIC:', BIC)
 
-        # calculate doubly-estimator of ate
+        # calculate doubly-robust estimator of ate
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in test_data:
