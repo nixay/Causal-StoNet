@@ -1,6 +1,6 @@
 from model.network import StoNet_Causal
-from model.training import training
-from data.acic_data import acic_data_homo
+from model.training_acic_hete import training_acic_hete
+from data.acic_data import acic_data_hete
 from torch.utils.data import DataLoader, random_split
 from torchtext.data import to_map_style_dataset
 import torch
@@ -58,7 +58,7 @@ def main():
     # dataset setting
     dgp = args.acic_dgp
     partition_seed = args.partition_seed
-    data = to_map_style_dataset(acic_data_homo(dgp))
+    data = to_map_style_dataset(acic_data_hete())
     data_size = data.__len__()
     train_size = int(data_size * 0.6)
     val_size = int(data_size * 0.2)
@@ -78,7 +78,7 @@ def main():
     treat_depth = args.depth
     hidden_dim = args.unit
     treat_node = args.treat_node
-    _, _, x_temp = next(iter(train_data))
+    _, _, _, x_temp = next(iter(train_data))
     input_dim = x_temp[0].size(dim=0)
     output_dim = 1
 
@@ -116,10 +116,10 @@ def main():
     num_selection_treat_list = np.zeros([num_seed])  # number of selected input for treatment
     train_loss_list = np.zeros([num_seed])
     val_loss_list = np.zeros([num_seed])
-    ate_list = np.zeros([num_seed])
+    pehe_list = np.zeros([num_seed])
 
     # path to save the result
-    base_path = os.path.join('.', 'acic', 'result', str(dgp))
+    base_path = os.path.join('.', 'acic_hete', 'result', str(dgp))
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
@@ -161,7 +161,7 @@ def main():
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n)
         # pretrain
         print("Pretrain")
-        output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
+        output_pretrain = training_acic_hete(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
                                    impute_lrs=impute_lrs, **optim_args)
         para_pretrain = output_pretrain["para_path"]
         para_grad_pretrain = output_pretrain["para_grad_path"]
@@ -186,7 +186,7 @@ def main():
 
         # train
         print("Train")
-        output_train = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train,
+        output_train = training_acic_hete(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train,
                                 impute_lrs=impute_lrs, **optim_args)
         para_train = output_train["para_path"]
         para_grad_train = output_train["para_grad_path"]
@@ -260,7 +260,7 @@ def main():
 
         # refine non-zero network parameters
         print("Refine Weight")
-        output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
+        output_fine_tune = training_acic_hete(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
                                     impute_lrs=impute_lrs_fine_tune, **optim_args)
         para_fine_tune = output_fine_tune["para_path"]
         para_grad_fine_tune = output_train["para_grad_path"]
@@ -323,18 +323,14 @@ def main():
             print("number of non-zero connections:", num_non_zero_element)
             print('BIC:', BIC)
 
-        # calculate doubly-estimator of ate
+        # calculate pehe for cate
         with torch.no_grad():
-            ate_db = 0  # doubly-robust estimate of average treatment effect
-            for y, treat, x in test_data:
-                pred, prop_score = net.forward(x, treat)
+            pehe = 0  # doubly-robust estimate of average treatment effect
+            for true_ate, y, treat, x in test_data:
                 counter_fact, _ = net.forward(x, 1 - treat)
-                outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
-                prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
-                pred_resid = torch.flatten(y - pred)
-                ate_db = torch.mean(outcome_contrast + prop_contrast * pred_resid)
-
-            ate_list[prune_seed] = ate_db
+                cate = torch.flatten(y - counter_fact) * (2*treat - 1)
+                pehe = torch.mean(torch.square(cate-true_ate))
+            pehe_list[prune_seed] = pehe
 
         torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
 
@@ -344,7 +340,7 @@ def main():
     np.savetxt(os.path.join(base_path, 'Overall_non_zero_connections.txt'), dim_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_selected_variables_out.txt'), num_selection_out_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_selected_variables_treat.txt'), num_selection_treat_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_ATE.txt'), ate_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_PEHE.txt'), pehe_list, fmt="%s")
 
 
 if __name__ == '__main__':
