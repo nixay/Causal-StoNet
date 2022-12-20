@@ -1,6 +1,6 @@
-from network import StoNet_Causal
-from simulation_data import SimData_Causal, SimData_Causal_Ind
-from stonet_causal_training import training
+from model.network import StoNet_Causal
+from model.training import training
+from data.simulation_data import SimData_Causal, SimData_Causal_Ind
 from torch.utils.data import DataLoader, random_split
 import torch
 import numpy as np
@@ -129,7 +129,7 @@ def main():
     ate_list[-1] = data.true_ate()
 
     # path to save the result
-    base_path = os.path.join('.', 'stonet_causal_sparsity', 'result', 'sim', data_name, str(data_seed))
+    base_path = os.path.join('.', 'simulation', 'result', data_name, str(data_seed))
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
