@@ -1,6 +1,6 @@
 from model.network import StoNet_Causal
 from model.training import training
-from data.acic_data import acic_data_cont
+from data.acic_data import acic_data_homo
 from torch.utils.data import DataLoader, random_split
 from torchtext.data import to_map_style_dataset
 import torch
@@ -58,7 +58,7 @@ def main():
     # dataset setting
     dgp = args.acic_dgp
     partition_seed = args.partition_seed
-    data = to_map_style_dataset(acic_data_cont(dgp))
+    data = to_map_style_dataset(acic_data_homo(dgp))
     data_size = data.__len__()
     train_size = int(data_size * 0.6)
     val_size = int(data_size * 0.2)
