@@ -5,7 +5,7 @@ import time
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
-def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
+def training_acic_hete(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
              sigma_list, temperature, prior_sigma_0, prior_sigma_1, lambda_n):
 
     """
@@ -117,7 +117,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
 
         # print("impute_lrs", step_impute_lrs)
 
-        for y, treat, x in train_data:
+        for _, y, treat, x in train_data:
             # backward imputation
             hidden_list = net.backward_imputation(mh_step, step_impute_lrs, alpha, temperature, loss_sum, sigma_list, x, treat, y)
 
@@ -142,7 +142,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         # calculate training loss
         train_loss = 0
         with torch.no_grad():
-            for y, treat, x in train_data:
+            for _, y, treat, x in train_data:
                 pred, _ = net.forward(x, treat)
                 train_loss += loss(pred, y).item()
 
@@ -153,7 +153,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         # calculate validation loss
         val_loss = 0
         with torch.no_grad():
-            for y, treat, x in val_data:
+            for _, y, treat, x in val_data:
                 pred, _ = net.forward(x, treat)
                 val_loss += loss(pred, y).item()
 
