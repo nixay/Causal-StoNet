@@ -6,26 +6,24 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
-             sigma_list, temperature, prior_sigma_0, prior_sigma_1, lambda_n):
+             sigma_list, temperature, prior_sigma_0, prior_sigma_1, lambda_n, scalar_y=1):
 
     """
     train the network
-    arguments:
+    inputs:
     mode: training mode
         for "pretrain", the impute_lr and para_lr will keep constant; pruning result will not be recorded.
         for "train", the impute_lr and para_lr decays epoch by epoch; pruning result will be recorded.
     net: StoNet_Causal object defined in network.py
         the network to be trained
-    train_data: DataLoader object
-        training data
-    val_data: DataLoader object
-        validation data
+    train_data, val_data: DataLoader object
+        training data and validation data, respectively
     epochs: float
         the number of training epochs
     batch_size: int
         sample size of each batch
     optimizer_list: list of torch.optim objects
-        optimizer for parameter update
+        optimizers for parameter update
     impute_lrs: list of floats
         learning rate for SGHMC
     alpha: float
@@ -36,11 +34,13 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         gaussian noise for each layer of the network
     temperature: int
         temperature for SGHMC
-    prior_sigma_0: float
-    prior_sigma_1: float
+    prior_sigma_0, prior_sigma_1: float
         variances for mixture gaussian prior
     lambda_n: float
         proportion for components of mixture gaussian prior
+    scalar_y: float
+        when the output is standardized, the losses need to be converted back to the original scale by multiplying
+        scalar_y, which is essentially the variance of the train set of y
 
     output:
     para_path: dictionary
@@ -58,6 +58,10 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
             model performance for each epoch
     impute_lrs: list of floats
             starting value of impute_lrs for refining network weight
+    likelihoods: list of floats
+            stores the likelihoods for each hidden layer after final updates of the neural network
+            the likelihoods are used to calculate BIC (note: the likelihoods are calculated based on the standardized
+            dataset)
     """
 
     # save training and validation loss
@@ -68,6 +72,9 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
     para_path = {}
     para_grad_path = {}
     para_gamma_path = {}
+
+    # save hidden likelihoods for calculating BIC
+    hidden_likelihood = np.zeros(net.num_hidden+1)
 
     # initial value of decaying impute_lrs and para_lrs
     step_impute_lrs = impute_lrs.copy()
@@ -98,14 +105,14 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
     threshold = np.sqrt(np.log((1 - lambda_n) / lambda_n * np.sqrt(prior_sigma_1 / prior_sigma_0)) / (
             0.5 / prior_sigma_0 - 0.5 / prior_sigma_1))
 
-    # average time for each epoch
-    accumulated_time = 0
+    # # average time for each epoch
+    # accumulated_time = 0
 
     # training
     for epoch in range(epochs):
         print("Epoch" + str(epoch))
 
-        tic = time.time()
+        # tic = time.time()
 
         if mode == "train":
             # impute_lr decay
@@ -139,6 +146,11 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 likelihood.backward()
                 optimizer.step()
 
+                if epoch == epochs-1:
+                    with torch.no_grad():
+                        likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, loss_sum, sigma_list, y)
+                        hidden_likelihood[layer_index] += likelihood
+
         # calculate training loss
         train_loss = 0
         with torch.no_grad():
@@ -146,7 +158,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 pred, _ = net.forward(x, treat)
                 train_loss += loss(pred, y).item()
 
-        train_loss /= len(train_data)
+        train_loss *= scalar_y/len(train_data)
         train_loss_path.append(train_loss)
         print(f"Avg train loss: {train_loss:>8f} \n")
 
@@ -157,12 +169,12 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 pred, _ = net.forward(x, treat)
                 val_loss += loss(pred, y).item()
 
-        val_loss /= len(val_data)
+        val_loss *= scalar_y/len(val_data)
         val_loss_path.append(val_loss)
         print(f"Avg val loss: {val_loss:>8f} \n")
 
-        toc = time.time()
-        accumulated_time += toc - tic
+        # toc = time.time()
+        # accumulated_time += toc - tic
 
         # save parameter values and selected connections
         para_path_temp = {str(epoch): {}}
@@ -212,6 +224,6 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
     else:
         output = dict(para_path=para_path, para_grad_path=para_grad_path, para_gamma_path=para_gamma_path,
                       input_gamma_path=input_gamma_path, performance=performance,
-                      impute_lrs=step_impute_lrs)
+                      impute_lrs=step_impute_lrs, likelihoods=hidden_likelihood)
 
     return output
