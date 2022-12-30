@@ -1,6 +1,6 @@
 from scipy.stats import truncnorm, bernoulli
 from torch.utils.data import Dataset, random_split
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pandas as pd
 import torch
@@ -28,21 +28,21 @@ def data_preprocess(data, partition_seed):
     val_indices = val_set.indices
     test_indices = test_set.indices
 
-    x_scaler = MinMaxScaler()
-    x_scaler.fit(data.x[train_indices])
+    x_scalar = StandardScaler()
+    x_scalar.fit(data.num_var[train_indices])
 
-    data.x[train_indices] = torch.FloatTensor(np.array(x_scaler.transform(data.x[train_indices]))).to(device)
-    data.x[val_indices] = torch.FloatTensor(np.array(x_scaler.transform(data.x[val_indices]))).to(device)
-    data.x[test_indices] = torch.FloatTensor(np.array(x_scaler.transform(data.x[test_indices]))).to(device)
+    data.num_var[train_indices] = np.array(x_scalar.transform(data.num_var[train_indices]))
+    data.num_var[val_indices] = np.array(x_scalar.transform(data.num_var[val_indices]))
+    data.num_var[test_indices] = np.array(x_scalar.transform(data.num_var[test_indices]))
 
-    y_scaler = MinMaxScaler()
-    y_scaler.fit(data.y[train_indices])
+    y_scalar = StandardScaler()
+    y_scalar.fit(data.y[train_indices])
 
-    data.y[train_indices] = torch.FloatTensor(np.array(y_scaler.transform(data.y[train_indices]))).to(device)
-    data.y[val_indices] = torch.FloatTensor(np.array(y_scaler.transform(data.y[val_indices]))).to(device)
-    data.y[test_indices] = torch.FloatTensor(np.array(y_scaler.transform(data.y[test_indices]))).to(device)
+    data.y[train_indices] = torch.FloatTensor(np.array(y_scalar.transform(data.y[train_indices]))).to(device)
+    data.y[val_indices] = torch.FloatTensor(np.array(y_scalar.transform(data.y[val_indices]))).to(device)
+    data.y[test_indices] = torch.FloatTensor(np.array(y_scalar.transform(data.y[test_indices]))).to(device)
 
-    return train_set, val_set, test_set, x_scaler, y_scaler
+    return train_set, val_set, test_set, x_scalar, y_scalar
 
 
 # Simulation Dataset
@@ -226,7 +226,7 @@ class SimData_Causal_Ind(Dataset):
         return ate
 
 
-# ACIC Dataset with Continuous Variable
+# ACIC Dataset with Continuous Variable and Homogeneous Treatment Effect
 class acic_data_homo(Dataset):
     """
     Load ACIC data with specific data generating process number
@@ -234,7 +234,7 @@ class acic_data_homo(Dataset):
         data generating process number
     """
     def __init__(self, dgp):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # extract csv file names under the specified dgp
         file_names_temp = pd.read_excel('./raw_data/acic/DatasetsCorrespondence.xlsx', header=None)
@@ -251,27 +251,33 @@ class acic_data_homo(Dataset):
         data = pd.concat(data, ignore_index=True)
 
         self.data_size = len(data.index)
-        self.y = torch.FloatTensor(np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)).to(device)
-        self.treat = torch.FloatTensor(np.array(data['A'], dtype=np.float32)).to(device)
-        self.x = torch.FloatTensor(np.array(data.loc[:, ~data.columns.isin(['Y', 'A'])], dtype=np.float32)).to(device)
+        cat_col = list(data.columns[(data.max() == 1) & (data.min() == 0)][1:])
+
+        self.y = torch.FloatTensor(np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)).to(self.device)
+        self.treat = torch.FloatTensor(np.array(data['A'], dtype=np.float32)).to(self.device)
+        self.cat_var = np.array(data[cat_col], dtype=np.float32)
+        self.num_var = np.array(data.loc[:, ~data.columns.isin(['Y', 'A', *cat_col])],
+                            dtype=np.float32)
 
     def __len__(self):
         return int(self.data_size)
 
     def __getitem__(self, idx):
         y = self.y[idx]
-        x = self.x[idx]
         treat = self.treat[idx]
+        x = torch.FloatTensor(np.concatenate((self.num_var[idx], self.cat_var[idx]))).to(self.device)
         return y, treat, x
 
 
+# ACIC Dataset with Continuous Variable and Heterogeneous Treatment Effect
 class acic_data_hete(Dataset):
     """
     load ACIC test data that combines different dgp to create heterogeneous treatment effect
     """
     def __init__(self):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        # read and concatenate the csv files
         data = []
         file_names_list = ['cont2', 'cont3', 'cont6', 'cont7']
         root_dir = './raw_data/acic/test_data'
@@ -282,22 +288,25 @@ class acic_data_hete(Dataset):
         data = pd.concat(data, ignore_index=True)
 
         self.data_size = len(data.index)
-        self.ate = torch.FloatTensor(np.array(data['ATE'], dtype=np.float32)).to(device)
-        self.y1 = torch.FloatTensor(np.array(data['EY1'], dtype=np.float32)).to(device)
-        self.y0 = torch.FloatTensor(np.array(data['EY0'], dtype=np.float32)).to(device)
+        cat_col = list(data.columns[(data.max() == 1) & (data.min() == 0)][1:])
 
-        self.y = torch.FloatTensor(np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)).to(device)
-        self.treat = torch.FloatTensor(np.array(data['A'], dtype=np.float32)).to(device)
-        self.x = torch.FloatTensor(np.array(data.loc[:, ~data.columns.isin(['ATE', 'EY1', 'EY0', 'Y', 'A'])],
-                                            dtype=np.float32)).to(device)
+        self.ate = torch.FloatTensor(np.array(data['ATE'], dtype=np.float32)).to(self.device)
+        self.y1 = torch.FloatTensor(np.array(data['EY1'], dtype=np.float32)).to(self.device)
+        self.y0 = torch.FloatTensor(np.array(data['EY0'], dtype=np.float32)).to(self.device)
+
+        self.y = torch.FloatTensor(np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)).to(self.device)
+        self.treat = torch.FloatTensor(np.array(data['A'], dtype=np.float32)).to(self.device)
+        self.cat_var = np.array(data[cat_col], dtype=np.float32)
+        self.num_var = np.array(data.loc[:, ~data.columns.isin(['ATE', 'EY1', 'EY0', 'Y', 'A', *cat_col])],
+                                            dtype=np.float32)
 
     def __len__(self):
         return int(self.data_size)
 
     def __getitem__(self, idx):
         y = self.y[idx]
-        x = self.x[idx]
         treat = self.treat[idx]
+        x = torch.FloatTensor(np.concatenate((self.num_var[idx], self.cat_var[idx]))).to(self.device)
         return y, treat, x
 
 
@@ -307,20 +316,23 @@ class PensionData(Dataset):
     load 401k dataset
     """
     def __init__(self):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         data = pd.read_csv("./raw_data/401k/401k.csv")
+        cat_col = ['db', 'marr', 'male', 'twoearn', 'pira', 'nohs', 'hs', 'smcol', 'col', 'hown']
         self.data_size = len(data.index)
-        self.y = torch.FloatTensor(np.array(data['net_tfa'], dtype=np.float32).reshape(self.data_size, 1)).to(device)
-        self.treat = torch.FloatTensor(np.array(data['e401'], dtype=np.float32)).to(device)
-        self.x = torch.FloatTensor(np.array(data.loc[:, ~data.columns.isin(['net_tfa', 'e401'])], dtype=np.float32)).to(device)
+
+        self.y = torch.FloatTensor(np.array(data['net_tfa'], dtype=np.float32).reshape(self.data_size, 1)).to(self.device)
+        self.treat = torch.FloatTensor(np.array(data['e401'], dtype=np.float32)).to(self.device)
+        self.cat_var = np.array(data[cat_col], dtype=np.float32)
+        self.num_var = np.array(data.loc[:, ~data.columns.isin(['net_tfa', 'e401', *cat_col])],
+                                                  dtype=np.float32)
 
     def __len__(self):
         return int(self.data_size)
 
     def __getitem__(self, idx):
         y = self.y[idx]
-        x = self.x[idx]
         treat = self.treat[idx]
+        x = torch.FloatTensor(np.concatenate((self.num_var[idx], self.cat_var[idx]))).to(self.device)
         return y, treat, x
-
