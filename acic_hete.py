@@ -1,8 +1,7 @@
 from model.network import StoNet_Causal
-from model.training_acic_hete import training_acic_hete
-from data.acic_data import acic_data_hete
-from torch.utils.data import DataLoader, random_split
-from torchtext.data import to_map_style_dataset
+from model.training import training
+from data import acic_data_hete, data_preprocess
+from torch.utils.data import DataLoader
 import torch
 import numpy as np
 import argparse
@@ -10,13 +9,13 @@ import os
 import errno
 from torch.optim import SGD
 import json
+from pickle import dump
 
-parser = argparse.ArgumentParser(description='Run Causal StoNet for ACIC data (continuous)')
+parser = argparse.ArgumentParser(description='Run Causal StoNet for ACIC data with heterogeneous treatment effect')
 # Basic Setting
 # dataset setting
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
-parser.add_argument('--acic_dgp', default=1, type=int, help='data generating process number for ACIC data')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
 
 # Parameter for StoNet
@@ -56,33 +55,23 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # dataset setting
-    dgp = args.acic_dgp
-    partition_seed = args.partition_seed
-    data = to_map_style_dataset(acic_data_hete())
-    data_size = data.__len__()
-    train_size = int(data_size * 0.6)
-    val_size = int(data_size * 0.2)
-    test_size = int(data_size * 0.2)
-    train_set, val_set, test_set = random_split(data, [train_size, val_size, test_size],
-                                                generator=torch.Generator().manual_seed(partition_seed))
+    data = acic_data_hete()
+    train_set, val_set, test_set, x_scalar, y_scalar = data_preprocess(data, args.partition_seed)
+    y_scale = float(y_scalar.var_)
 
     # load training data and validation data
     num_workers = args.num_workers
     batch_size = args.batch_size
     train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    test_data = DataLoader(test_set, batch_size=test_size, num_workers=num_workers)
+    test_data = DataLoader(test_set, batch_size=test_set.__len__(), num_workers=num_workers)
 
     # network setup
-    num_hidden = args.layer
-    treat_depth = args.depth
-    hidden_dim = args.unit
-    treat_node = args.treat_node
-    _, _, _, x_temp = next(iter(train_data))
-    input_dim = x_temp[0].size(dim=0)
-    output_dim = 1
+    _, _, x_temp = next(iter(train_set))
+    net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=x_temp.size(dim=0), output_dim=1,
+                    treat_layer=args.depth, treat_node=args.treat_node)
 
-    # set number of independent runs for sparsity
+    # number of independent runs for sparsity
     num_seed = args.num_run
 
     # training setting
@@ -95,10 +84,8 @@ def main():
 
     # imputation parameters
     impute_lrs = args.impute_lr
-    alpha = args.impute_alpha
     mh_step = args.mh_step
     sigma_list = args.sigma
-    temperature = args.temperature
 
     # prior parameters
     prior_sigma_0 = args.sigma0
@@ -110,24 +97,26 @@ def main():
             0.5 / prior_sigma_0 - 0.5 / prior_sigma_1))
 
     # training results containers
-    dim_list = np.zeros([num_seed])  # total number of non-zero element of the pruned network
-    BIC_list = np.zeros([num_seed])  # BIC value for model selection
+    dim_list = np.zeros([num_seed])  # total number of non-zero parameters of the pruned network
+    BIC_list = np.zeros([num_seed])  # BIC
     num_selection_out_list = np.zeros([num_seed])  # number of selected input for outcome variable
     num_selection_treat_list = np.zeros([num_seed])  # number of selected input for treatment
     train_loss_list = np.zeros([num_seed])
     val_loss_list = np.zeros([num_seed])
-    pehe_list = np.zeros([num_seed])
+    ate_list = np.zeros([num_seed])  # estimated average treatment effect
 
     # path to save the result
-    base_path = os.path.join('.', 'acic_hete', 'result', str(dgp))
+    base_path = os.path.join('.', 'acic_hete', 'result')
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     base_path = os.path.join(base_path, basic_spec, spec)
 
+    # Training starts here
     for prune_seed in range(num_seed):
         print('number of runs', prune_seed)
 
+        # create the path to save model results
         PATH = os.path.join(base_path, str(prune_seed))
         if not os.path.isdir(PATH):
             try:
@@ -138,12 +127,13 @@ def main():
                 else:
                     raise
 
+        # initialize network
         np.random.seed(prune_seed)
         torch.manual_seed(prune_seed)
-        net = StoNet_Causal(num_hidden, hidden_dim, input_dim, output_dim, treat_depth, treat_node)
+        net = StoNet_Causal(**net_args)
         net.to(device)
 
-        # optimizer
+        # define optimizer
         optimizer_list_train = []
         for i in range(net.num_hidden + 1):
             # set maximize = True to do gradient ascent
@@ -156,12 +146,14 @@ def main():
             optimizer_list_fine_tune.append(SGD(net.module_list[j].parameters(), lr=para_lrs_fine_tune[j],
                                                 momentum=para_momentum, maximize=True))
 
-        optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=alpha, mh_step=mh_step,
-                          sigma_list=sigma_list, temperature=temperature, prior_sigma_0=prior_sigma_0,
-                          prior_sigma_1=prior_sigma_1, lambda_n=lambda_n)
+        # parameters for training
+        optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
+                          mh_step=mh_step, sigma_list=sigma_list, temperature=args.temperature, prior_sigma_0=prior_sigma_0,
+                          prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, scalar_y=y_scale)
+
         # pretrain
         print("Pretrain")
-        output_pretrain = training_acic_hete(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
+        output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
                                    impute_lrs=impute_lrs, **optim_args)
         para_pretrain = output_pretrain["para_path"]
         para_grad_pretrain = output_pretrain["para_grad_path"]
@@ -186,7 +178,7 @@ def main():
 
         # train
         print("Train")
-        output_train = training_acic_hete(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train,
+        output_train = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train,
                                 impute_lrs=impute_lrs, **optim_args)
         para_train = output_train["para_path"]
         para_grad_train = output_train["para_grad_path"]
@@ -260,7 +252,7 @@ def main():
 
         # refine non-zero network parameters
         print("Refine Weight")
-        output_fine_tune = training_acic_hete(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
+        output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
                                     impute_lrs=impute_lrs_fine_tune, **optim_args)
         para_fine_tune = output_fine_tune["para_path"]
         para_grad_fine_tune = output_train["para_grad_path"]
@@ -270,8 +262,9 @@ def main():
         var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
         num_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_treat"]
         performance_fine_tune = output_fine_tune["performance"]
+        likelihoods = output_fine_tune["likelihoods"]
 
-        # save fine tuning results
+        # save refining results
         para_gamma_file = open(os.path.join(PATH, 'para_gamma_fine_tune.json'), "w")
         json.dump(para_gamma_fine_tune, para_gamma_file, indent="")
         para_gamma_file.close()
@@ -304,43 +297,62 @@ def main():
         json.dump(num_gamma_treat_fine_tune, num_gamma_file, indent="")
         num_gamma_file.close()
 
-        # save training results for this run
-        train_loss = performance_fine_tune['train_loss'][-1]
+        # save training results for the final run
+        # will need to transfer the losses back to the original scale
+        train_loss = performance_fine_tune['train_loss'][-1]*y_scale
         train_loss_list[prune_seed] = train_loss
-        val_loss = performance_fine_tune['val_loss'][-1]
+        val_loss = performance_fine_tune['val_loss'][-1]*y_scale
         val_loss_list[prune_seed] = val_loss
 
-        # calculate BIC
+        # calculate non-zero connections and BIC
         with torch.no_grad():
             num_non_zero_element = 0
             for name, para in net.named_parameters():
                 num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
             dim_list[prune_seed] = num_non_zero_element
 
-            BIC = (train_size * train_loss + np.log(train_size) *num_non_zero_element).item()
+            BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
             BIC_list[prune_seed] = BIC
 
-            print("number of non-zero connections:", num_non_zero_element)
+            print("number of non-zero connections:", num_non_zero_element.item())
             print('BIC:', BIC)
 
-        # calculate pehe for cate
+        # calculate doubly-robust estimator of ate
         with torch.no_grad():
-            pehe = 0  # doubly-robust estimate of average treatment effect
-            for true_ate, y, treat, x in test_data:
+            ate_db = 0  # doubly-robust estimate of average treatment effect
+            for y, treat, x in test_data:
+                pred, prop_score = net.forward(x, treat)
+                pred = torch.FloatTensor(np.array(y_scalar.inverse_transform(pred))).to(device)
                 counter_fact, _ = net.forward(x, 1 - treat)
-                cate = torch.flatten(y - counter_fact) * (2*treat - 1)
-                pehe = torch.mean(torch.square(cate-true_ate))
-            pehe_list[prune_seed] = pehe
+                counter_fact = torch.FloatTensor(np.array(y_scalar.inverse_transform(counter_fact))).to(device)
+                outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
+                prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
+                pred_resid = torch.flatten(y - pred)
+                ate_db = torch.mean(outcome_contrast + prop_contrast * pred_resid)
+
+            ate_list[prune_seed] = ate_db
+
+        # # NEED TO IMPLEMENT THE ESTIMATION OF CATE
+        # test_indices = test_set.indices
+        # true_ate = data.ate[test_indices]
 
         torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
 
+    # save overall performance
     np.savetxt(os.path.join(base_path, 'Overall_train_loss.txt'), train_loss_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_val_loss.txt'), val_loss_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_BIC.txt'), BIC_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_non_zero_connections.txt'), dim_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_selected_variables_out.txt'), num_selection_out_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_selected_variables_treat.txt'), num_selection_treat_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_PEHE.txt'), pehe_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_ATE.txt'), ate_list, fmt="%s")
+
+    # save scalars
+    dump(x_scalar, open(os.path.join(base_path, 'x_scalar.pkl'), 'wb'))
+    dump(y_scalar, open(os.path.join(base_path, 'y_scalar.pkl'), 'wb'))
+    # # to load the scalar:
+    # from pickle import load
+    # y_scalar = load(open('directory/y_scalar', 'rb'))
 
 
 if __name__ == '__main__':

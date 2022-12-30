@@ -1,6 +1,6 @@
 from model.network import StoNet_Causal
 from model.training import training
-from data.simulation_data import SimData_Causal, SimData_Causal_Ind
+from data import SimData_Causal, SimData_Causal_Ind
 from torch.utils.data import DataLoader, random_split
 import torch
 import numpy as np
@@ -10,10 +10,10 @@ import errno
 from torch.optim import SGD
 import json
 
-parser = argparse.ArgumentParser(description='Tune Causal StoNet for Sparsity')
+parser = argparse.ArgumentParser(description='Run Simulation for Causal StoNet')
 # Basic Setting
 # simulation setting
-parser.add_argument('--data_seed', default=1, type=int, help='set seed for data generation')
+parser.add_argument('--data_seed', default=1, type=int, help='set seed for data_scripts generation')
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
 parser.add_argument('--data_name', default = 'cor', type=str, help='name of simulation dataset')
 
@@ -39,7 +39,7 @@ parser.add_argument('--train_epoch', default=1500, type=int, help='total number 
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
 parser.add_argument('--impute_lr', default=[3e-3, 3e-4, 1e-6], type=float, nargs='+', help='step size for SGHMC')
 parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum weight for SGHMC')
-parser.add_argument('--para_lr_train', default=[3e-3, 3e-5, 3e-7, 3e-12], type=float, nargs='+',
+parser.add_argument('--para_lr_train', default=[1e-3, 1e-5, 1e-7, 1e-12], type=float, nargs='+',
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
 parser.add_argument('--temperature', default=2, type=float, help="temperature parameter for SGHMC")
@@ -47,12 +47,12 @@ parser.add_argument('--temperature', default=2, type=float, help="temperature pa
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
-parser.add_argument('--para_lr_fine_tune', default=[3e-4, 3e-6, 3e-8, 3e-13], type=float, nargs='+',
+parser.add_argument('--para_lr_fine_tune', default=[1e-4, 1e-6, 1e-8, 1e-13], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
 # prior setting
-parser.add_argument('--sigma0', default=2e-5, type=float, help='sigma_0^2 in prior')
-parser.add_argument('--sigma1', default=1e-2, type=float, help='sigma_1^2 in prior')
-parser.add_argument('--lambda_n', default=1e-4, type=float, help='lambda_n in prior')
+parser.add_argument('--sigma0', default=1e-3, type=float, help='sigma_0^2 in prior')
+parser.add_argument('--sigma1', default=1e-1, type=float, help='sigma_1^2 in prior')
+parser.add_argument('--lambda_n', default=1e-6, type=float, help='lambda_n in prior')
 
 args = parser.parse_args()
 
@@ -84,7 +84,7 @@ def main():
     train_set, val_set, test_set = random_split(data, [train_size, val_size, test_size],
                                       generator=torch.Generator().manual_seed(partition_seed))
 
-    # load training data and validation data
+    # load training data_scripts and validation data_scripts
     num_workers = args.num_workers
     batch_size = args.batch_size
     train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
@@ -280,6 +280,7 @@ def main():
         var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
         num_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_treat"]
         performance_fine_tune = output_fine_tune["performance"]
+        likelihoods = output_fine_tune["likelihoods"]
 
         # save fine tuning results
         para_gamma_file = open(os.path.join(PATH, 'para_gamma_fine_tune.json'), "w")
@@ -327,13 +328,13 @@ def main():
                 num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
             dim_list[prune_seed] = num_non_zero_element
 
-            BIC = (train_size * train_loss + np.log(train_size) *num_non_zero_element).item()
+            BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
             BIC_list[prune_seed] = BIC
 
             print("number of non-zero connections:", num_non_zero_element)
             print('BIC:', BIC)
 
-        # calculate doubly-estimator of ate
+        # calculate doubly-robust estimator of ate
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in test_data:

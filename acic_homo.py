@@ -1,8 +1,7 @@
 from model.network import StoNet_Causal
 from model.training import training
-from data.acic_data import acic_data_homo
-from torch.utils.data import DataLoader, random_split
-from torchtext.data import to_map_style_dataset
+from data import acic_data_homo, data_preprocess
+from torch.utils.data import DataLoader
 import torch
 import numpy as np
 import argparse
@@ -10,6 +9,7 @@ import os
 import errno
 from torch.optim import SGD
 import json
+from pickle import dump
 
 parser = argparse.ArgumentParser(description='Run Causal StoNet for ACIC data with homogeneous treatment effect')
 # Basic Setting
@@ -57,32 +57,23 @@ def main():
 
     # dataset setting
     dgp = args.acic_dgp
-    partition_seed = args.partition_seed
-    data = to_map_style_dataset(acic_data_homo(dgp))
-    data_size = data.__len__()
-    train_size = int(data_size * 0.6)
-    val_size = int(data_size * 0.2)
-    test_size = int(data_size * 0.2)
-    train_set, val_set, test_set = random_split(data, [train_size, val_size, test_size],
-                                                generator=torch.Generator().manual_seed(partition_seed))
+    data = acic_data_homo(dgp)
+    train_set, val_set, test_set, x_scalar, y_scalar = data_preprocess(data, args.partition_seed)
+    y_scale = float(y_scalar.var_)
 
     # load training data and validation data
     num_workers = args.num_workers
     batch_size = args.batch_size
     train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    test_data = DataLoader(test_set, batch_size=test_size, num_workers=num_workers)
+    test_data = DataLoader(test_set, batch_size=test_set.__len__(), num_workers=num_workers)
 
     # network setup
-    num_hidden = args.layer
-    treat_depth = args.depth
-    hidden_dim = args.unit
-    treat_node = args.treat_node
-    _, _, x_temp = next(iter(train_data))
-    input_dim = x_temp[0].size(dim=0)
-    output_dim = 1
+    _, _, x_temp = next(iter(train_set))
+    net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=x_temp.size(dim=0), output_dim=1,
+                    treat_layer=args.depth, treat_node=args.treat_node)
 
-    # set number of independent runs for sparsity
+    # number of independent runs for sparsity
     num_seed = args.num_run
 
     # training setting
@@ -95,10 +86,8 @@ def main():
 
     # imputation parameters
     impute_lrs = args.impute_lr
-    alpha = args.impute_alpha
     mh_step = args.mh_step
     sigma_list = args.sigma
-    temperature = args.temperature
 
     # prior parameters
     prior_sigma_0 = args.sigma0
@@ -110,13 +99,13 @@ def main():
             0.5 / prior_sigma_0 - 0.5 / prior_sigma_1))
 
     # training results containers
-    dim_list = np.zeros([num_seed])  # total number of non-zero element of the pruned network
-    BIC_list = np.zeros([num_seed])  # BIC value for model selection
+    dim_list = np.zeros([num_seed])  # total number of non-zero parameters of the pruned network
+    BIC_list = np.zeros([num_seed])  # BIC
     num_selection_out_list = np.zeros([num_seed])  # number of selected input for outcome variable
     num_selection_treat_list = np.zeros([num_seed])  # number of selected input for treatment
     train_loss_list = np.zeros([num_seed])
     val_loss_list = np.zeros([num_seed])
-    ate_list = np.zeros([num_seed])
+    ate_list = np.zeros([num_seed])  # estimated average treatment effect
 
     # path to save the result
     base_path = os.path.join('.', 'acic_homo', 'result', str(dgp))
@@ -125,9 +114,11 @@ def main():
            str(prior_sigma_1) + '_' + str(lambda_n)
     base_path = os.path.join(base_path, basic_spec, spec)
 
+    # Training starts here
     for prune_seed in range(num_seed):
         print('number of runs', prune_seed)
 
+        # create the path to save model results
         PATH = os.path.join(base_path, str(prune_seed))
         if not os.path.isdir(PATH):
             try:
@@ -138,12 +129,13 @@ def main():
                 else:
                     raise
 
+        # initialize network
         np.random.seed(prune_seed)
         torch.manual_seed(prune_seed)
-        net = StoNet_Causal(num_hidden, hidden_dim, input_dim, output_dim, treat_depth, treat_node)
+        net = StoNet_Causal(**net_args)
         net.to(device)
 
-        # optimizer
+        # define optimizer
         optimizer_list_train = []
         for i in range(net.num_hidden + 1):
             # set maximize = True to do gradient ascent
@@ -156,9 +148,11 @@ def main():
             optimizer_list_fine_tune.append(SGD(net.module_list[j].parameters(), lr=para_lrs_fine_tune[j],
                                                 momentum=para_momentum, maximize=True))
 
-        optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=alpha, mh_step=mh_step,
-                          sigma_list=sigma_list, temperature=temperature, prior_sigma_0=prior_sigma_0,
-                          prior_sigma_1=prior_sigma_1, lambda_n=lambda_n)
+        # parameters for training
+        optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
+                          mh_step=mh_step, sigma_list=sigma_list, temperature=args.temperature, prior_sigma_0=prior_sigma_0,
+                          prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, scalar_y=y_scale)
+
         # pretrain
         print("Pretrain")
         output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
@@ -270,8 +264,9 @@ def main():
         var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
         num_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_treat"]
         performance_fine_tune = output_fine_tune["performance"]
+        likelihoods = output_fine_tune["likelihoods"]
 
-        # save fine tuning results
+        # save refining results
         para_gamma_file = open(os.path.join(PATH, 'para_gamma_fine_tune.json'), "w")
         json.dump(para_gamma_fine_tune, para_gamma_file, indent="")
         para_gamma_file.close()
@@ -304,23 +299,24 @@ def main():
         json.dump(num_gamma_treat_fine_tune, num_gamma_file, indent="")
         num_gamma_file.close()
 
-        # save training results for this run
-        train_loss = performance_fine_tune['train_loss'][-1]
+        # save training results for the final run
+        # will need to transfer the losses back to the original scale
+        train_loss = performance_fine_tune['train_loss'][-1]*y_scale
         train_loss_list[prune_seed] = train_loss
-        val_loss = performance_fine_tune['val_loss'][-1]
+        val_loss = performance_fine_tune['val_loss'][-1]*y_scale
         val_loss_list[prune_seed] = val_loss
 
-        # calculate BIC
+        # calculate non-zero connections and BIC
         with torch.no_grad():
             num_non_zero_element = 0
             for name, para in net.named_parameters():
                 num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
             dim_list[prune_seed] = num_non_zero_element
 
-            BIC = (train_size * train_loss + np.log(train_size) *num_non_zero_element).item()
+            BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
             BIC_list[prune_seed] = BIC
 
-            print("number of non-zero connections:", num_non_zero_element)
+            print("number of non-zero connections:", num_non_zero_element.item())
             print('BIC:', BIC)
 
         # calculate doubly-robust estimator of ate
@@ -328,7 +324,9 @@ def main():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in test_data:
                 pred, prop_score = net.forward(x, treat)
+                pred = torch.FloatTensor(np.array(y_scalar.inverse_transform(pred))).to(device)
                 counter_fact, _ = net.forward(x, 1 - treat)
+                counter_fact = torch.FloatTensor(np.array(y_scalar.inverse_transform(counter_fact))).to(device)
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
                 pred_resid = torch.flatten(y - pred)
@@ -338,6 +336,7 @@ def main():
 
         torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
 
+    # save overall performance
     np.savetxt(os.path.join(base_path, 'Overall_train_loss.txt'), train_loss_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_val_loss.txt'), val_loss_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_BIC.txt'), BIC_list, fmt="%s")
@@ -345,6 +344,13 @@ def main():
     np.savetxt(os.path.join(base_path, 'Overall_selected_variables_out.txt'), num_selection_out_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_selected_variables_treat.txt'), num_selection_treat_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_ATE.txt'), ate_list, fmt="%s")
+
+    # save scalars
+    dump(x_scalar, open(os.path.join(base_path, 'x_scalar.pkl'), 'wb'))
+    dump(y_scalar, open(os.path.join(base_path, 'y_scalar.pkl'), 'wb'))
+    # # to load the scalar:
+    # from pickle import load
+    # y_scalar = load(open('directory/y_scalar', 'rb'))
 
 
 if __name__ == '__main__':
