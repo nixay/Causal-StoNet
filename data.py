@@ -1,6 +1,6 @@
 from scipy.stats import truncnorm, bernoulli
 from torch.utils.data import Dataset, random_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 import numpy as np
 import pandas as pd
 import torch
@@ -15,8 +15,6 @@ def data_preprocess(data, partition_seed):
     partition_seed: int
         seed to randomly partition the dataset into train set, validation set, and test set
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     data_size = data.__len__()
     train_size = int(data_size * 0.6)
     val_size = int(data_size * 0.2)
@@ -28,14 +26,14 @@ def data_preprocess(data, partition_seed):
     val_indices = val_set.indices
     test_indices = test_set.indices
 
-    x_scalar = StandardScaler()
+    x_scalar = RobustScaler()
     x_scalar.fit(data.num_var[train_indices])
 
     data.num_var[train_indices] = np.array(x_scalar.transform(data.num_var[train_indices]))
     data.num_var[val_indices] = np.array(x_scalar.transform(data.num_var[val_indices]))
     data.num_var[test_indices] = np.array(x_scalar.transform(data.num_var[test_indices]))
 
-    y_scalar = StandardScaler()
+    y_scalar = RobustScaler()
     y_scalar.fit(data.y[train_indices])
 
     data.y[train_indices] = np.array(y_scalar.transform(data.y[train_indices]))
