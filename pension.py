@@ -57,7 +57,7 @@ def main():
     # dataset setting
     data = PensionData()
     train_set, val_set, test_set, x_scalar, y_scalar = data_preprocess(data, args.partition_seed)
-    y_scale = float(y_scalar.var_)
+    y_scale = float(y_scalar.scale_)
 
     # load training data and validation data
     num_workers = args.num_workers
@@ -299,9 +299,9 @@ def main():
 
         # save training results for the final run
         # will need to transfer the losses back to the original scale
-        train_loss = performance_fine_tune['train_loss'][-1]*y_scale
+        train_loss = performance_fine_tune['train_loss'][-1]
         train_loss_list[prune_seed] = train_loss
-        val_loss = performance_fine_tune['val_loss'][-1]*y_scale
+        val_loss = performance_fine_tune['val_loss'][-1]
         val_loss_list[prune_seed] = val_loss
 
         # calculate non-zero connections and BIC
