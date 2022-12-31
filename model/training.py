@@ -158,7 +158,8 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 pred, _ = net.forward(x, treat)
                 train_loss += loss(pred, y).item()
 
-        train_loss *= scalar_y/len(train_data)
+        # use RMSE as the model performance metric
+        train_loss = np.sqrt(train_loss/len(train_data)) * scalar_y
         train_loss_path.append(train_loss)
         print(f"Avg train loss: {train_loss:>8f} \n")
 
@@ -169,7 +170,8 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 pred, _ = net.forward(x, treat)
                 val_loss += loss(pred, y).item()
 
-        val_loss *= scalar_y/len(val_data)
+        # use RMSE as the model performance metric
+        val_loss = np.sqrt(val_loss/len(val_data)) * scalar_y
         val_loss_path.append(val_loss)
         print(f"Avg val loss: {val_loss:>8f} \n")
 
