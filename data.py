@@ -294,7 +294,7 @@ class acic_data_hete(Dataset):
         self.y1 = torch.FloatTensor(np.array(data['EY1'], dtype=np.float32)).to(self.device)
         self.y0 = torch.FloatTensor(np.array(data['EY0'], dtype=np.float32)).to(self.device)
 
-        self.y = torch.FloatTensor(np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)).to(self.device)
+        self.y = np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)
         self.treat = torch.FloatTensor(np.array(data['A'], dtype=np.float32)).to(self.device)
         self.cat_var = np.array(data[cat_col], dtype=np.float32)
         self.num_var = np.array(data.loc[:, ~data.columns.isin(['ATE', 'EY1', 'EY0', 'Y', 'A', *cat_col])],
@@ -304,7 +304,7 @@ class acic_data_hete(Dataset):
         return int(self.data_size)
 
     def __getitem__(self, idx):
-        y = self.y[idx]
+        y = torch.FloatTensor(self.y[idx]).to(self.device)
         treat = self.treat[idx]
         x = torch.FloatTensor(np.concatenate((self.num_var[idx], self.cat_var[idx]))).to(self.device)
         return y, treat, x
@@ -322,7 +322,7 @@ class PensionData(Dataset):
         cat_col = ['db', 'marr', 'male', 'twoearn', 'pira', 'nohs', 'hs', 'smcol', 'col', 'hown']
         self.data_size = len(data.index)
 
-        self.y = torch.FloatTensor(np.array(data['net_tfa'], dtype=np.float32).reshape(self.data_size, 1)).to(self.device)
+        self.y = np.array(data['net_tfa'], dtype=np.float32).reshape(self.data_size, 1)
         self.treat = torch.FloatTensor(np.array(data['e401'], dtype=np.float32)).to(self.device)
         self.cat_var = np.array(data[cat_col], dtype=np.float32)
         self.num_var = np.array(data.loc[:, ~data.columns.isin(['net_tfa', 'e401', *cat_col])],
@@ -332,7 +332,7 @@ class PensionData(Dataset):
         return int(self.data_size)
 
     def __getitem__(self, idx):
-        y = self.y[idx]
+        y = torch.FloatTensor(self.y[idx]).to(self.device)
         treat = self.treat[idx]
         x = torch.FloatTensor(np.concatenate((self.num_var[idx], self.cat_var[idx]))).to(self.device)
         return y, treat, x
