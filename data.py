@@ -38,9 +38,9 @@ def data_preprocess(data, partition_seed):
     y_scalar = StandardScaler()
     y_scalar.fit(data.y[train_indices])
 
-    data.y[train_indices] = torch.FloatTensor(np.array(y_scalar.transform(data.y[train_indices]))).to(device)
-    data.y[val_indices] = torch.FloatTensor(np.array(y_scalar.transform(data.y[val_indices]))).to(device)
-    data.y[test_indices] = torch.FloatTensor(np.array(y_scalar.transform(data.y[test_indices]))).to(device)
+    data.y[train_indices] = np.array(y_scalar.transform(data.y[train_indices]))
+    data.y[val_indices] = np.array(y_scalar.transform(data.y[val_indices]))
+    data.y[test_indices] = np.array(y_scalar.transform(data.y[test_indices]))
 
     return train_set, val_set, test_set, x_scalar, y_scalar
 
@@ -245,7 +245,7 @@ class acic_data_homo(Dataset):
         data = []
         root_dir = './raw_data/acic/data_subset'
         for file_name in file_names_list:
-            dir = os.path.join(root_dir, file_name + ".csv")
+            dir = os.path.join(root_dir, file_name + ".CSV")
             file = pd.read_csv(dir)
             data.append(file)
         data = pd.concat(data, ignore_index=True)
@@ -253,7 +253,7 @@ class acic_data_homo(Dataset):
         self.data_size = len(data.index)
         cat_col = list(data.columns[(data.max() == 1) & (data.min() == 0)][1:])
 
-        self.y = torch.FloatTensor(np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)).to(self.device)
+        self.y = np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)
         self.treat = torch.FloatTensor(np.array(data['A'], dtype=np.float32)).to(self.device)
         self.cat_var = np.array(data[cat_col], dtype=np.float32)
         self.num_var = np.array(data.loc[:, ~data.columns.isin(['Y', 'A', *cat_col])],
@@ -263,7 +263,7 @@ class acic_data_homo(Dataset):
         return int(self.data_size)
 
     def __getitem__(self, idx):
-        y = self.y[idx]
+        y = torch.FloatTensor(self.y[idx]).to(self.device)
         treat = self.treat[idx]
         x = torch.FloatTensor(np.concatenate((self.num_var[idx], self.cat_var[idx]))).to(self.device)
         return y, treat, x
