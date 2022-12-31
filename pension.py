@@ -322,9 +322,10 @@ def main():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in test_data:
                 pred, prop_score = net.forward(x, treat)
-                pred = torch.FloatTensor(np.array(y_scalar.inverse_transform(pred))).to(device)
+                # if run on gpu, need to convert pred and counter_fact to cpu, then convert it to numpy array
+                pred = torch.FloatTensor(np.array(y_scalar.inverse_transform(pred.cpu()))).to(device)
                 counter_fact, _ = net.forward(x, 1 - treat)
-                counter_fact = torch.FloatTensor(np.array(y_scalar.inverse_transform(counter_fact))).to(device)
+                counter_fact = torch.FloatTensor(np.array(y_scalar.inverse_transform(counter_fact.cpu()))).to(device)
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
                 pred_resid = torch.flatten(y - pred)
