@@ -247,9 +247,14 @@ class acic_data_homo(Dataset):
             file = pd.read_csv(dir)
             data.append(file)
         data = pd.concat(data, ignore_index=True)
-
         self.data_size = len(data.index)
-        cat_col = list(data.columns[(data.max() == 1) & (data.min() == 0)][1:])
+
+        # extract column names for categorical variables
+        cat_col = []
+        for col in data.columns:
+            if len(data[col].unique()) <= data[col].max() + 1:
+                cat_col.append(col)
+        cat_col = cat_col[1:]
 
         self.y = np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)
         self.treat = torch.FloatTensor(np.array(data['A'], dtype=np.float32)).to(self.device)
@@ -284,9 +289,16 @@ class acic_data_hete(Dataset):
             file = pd.read_csv(dir)
             data.append(file)
         data = pd.concat(data, ignore_index=True)
-
         self.data_size = len(data.index)
-        cat_col = list(data.columns[(data.max() == 1) & (data.min() == 0)][1:])
+
+        # extract column names for categorical variables
+        # note that for this dataset, the extracted cat_cols may not be real categorical variables
+        # for some extracted columns, the values don't seem to be encoding of categorical variables
+        cat_col = []
+        for col in data.columns:
+            if len(data[col].unique()) == data[col].max() + 1:
+                cat_col.append(col)
+        cat_col = cat_col[1:]
 
         self.ate = torch.FloatTensor(np.array(data['ATE'], dtype=np.float32)).to(self.device)
         self.y1 = torch.FloatTensor(np.array(data['EY1'], dtype=np.float32)).to(self.device)
