@@ -6,7 +6,8 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
-             sigma_list, temperature, prior_sigma_0, prior_sigma_1, lambda_n, scalar_y=1):
+             sigma_list, temperature, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
+             impute_lr_decay, scalar_y=1):
 
     """
     train the network
@@ -38,6 +39,8 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         variances for mixture gaussian prior
     lambda_n: float
         proportion for components of mixture gaussian prior
+    para_lr_decay, impute_lr_decay: float
+        decay factor for para_lr and impute_lr, respectively
     scalar_y: float
         when the output is standardized, the losses need to be converted back to the original scale by multiplying
         scalar_y, which is essentially the variance of the train set of y
@@ -78,20 +81,20 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
 
     # initial value of decaying impute_lrs and para_lrs
     step_impute_lrs = impute_lrs.copy()
-    # step_para_lrs = []
-    # for i in range(net.num_hidden+1):
-    #     step_para_lrs.append(optimizer_list[i].param_groups[0]['lr'])
+    init_para_lrs = []
+    for i in range(net.num_hidden+1):
+        init_para_lrs.append(optimizer_list[i].param_groups[0]['lr'])
 
     if mode == "train":
         # save parameter values, indicator variables, and selected input variables for each epoch
         input_gamma_path = dict(var_selected_out={}, var_selected_treat={}, num_selected_out=[],
                                 num_selected_treat=[])
 
-        # para_lr decay
-        scheduler_list = []
-        for j in range(net.num_hidden + 1):
-            # decay para_lr once val_loss is not decreasing
-            scheduler_list.append(ReduceLROnPlateau(optimizer_list[j], patience=20, factor=0.95, eps=1e-14))
+        # # para_lr decay
+        # scheduler_list = []
+        # for j in range(net.num_hidden + 1):
+        #     # decay para_lr once val_loss is not decreasing
+        #     scheduler_list.append(ReduceLROnPlateau(optimizer_list[j], patience=20, factor=0.95, eps=1e-14))
 
     # settings for loss functions
     loss = nn.MSELoss()
@@ -115,14 +118,15 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         # tic = time.time()
 
         if mode == "train":
-            # impute_lr decay
-            a = 0.8
+            # impute_lr decay and para_lr decay
             for i in range(net.num_hidden):
-                step_impute_lrs[i] = impute_lrs[i]/(1+impute_lrs[i]*epoch**a)
-            #     optimizer_list[i].param_groups[0]['lr'] = step_para_lrs[i]/(1+step_para_lrs[i]*epoch**a)
-            # optimizer_list[-1].param_groups[0]['lr'] = step_para_lrs[-1]/(1+step_para_lrs[-1]*epoch**a)
+                step_impute_lrs[i] = impute_lrs[i]/(1+impute_lrs[i]*epoch**impute_lr_decay)
+                optimizer_list[i].param_groups[0]['lr'] = init_para_lrs[i]/(1+init_para_lrs[i]*epoch**para_lr_decay)
+            optimizer_list[-1].param_groups[0]['lr'] = init_para_lrs[-1]/(1+init_para_lrs[-1]*epoch**para_lr_decay)
 
-        # print("impute_lrs", step_impute_lrs)
+        print("impute_lrs", step_impute_lrs)
+        for i in range(net.num_hidden):
+            print("para_lr", optimizer_list[i].param_groups[0]['lr'])
 
         for y, treat, x in train_data:
             # backward imputation
@@ -210,13 +214,13 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
             print('number of selected input variable for outcome:', num_selected_out)
             print('number of selected input variable for treatment:', num_selected_treat)
 
-            # para_lr decay
-            for layer_index in range(net.num_hidden + 1):
-                scheduler = scheduler_list[layer_index]
-                # scheduler.step()
-                # print("para_lr", scheduler.get_last_lr())
-                scheduler.step(val_loss)
-                # print("para_lr", optimizer_list[layer_index].param_groups[0]['lr'])
+            # # para_lr decay
+            # for layer_index in range(net.num_hidden + 1):
+            #     scheduler = scheduler_list[layer_index]
+            #     # scheduler.step()
+            #     # print("para_lr", scheduler.get_last_lr())
+            #     scheduler.step(val_loss)
+            #     # print("para_lr", optimizer_list[layer_index].param_groups[0]['lr'])
 
     # print("average time per epoch", accumulated_time/epochs)
 

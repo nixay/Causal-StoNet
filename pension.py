@@ -37,6 +37,8 @@ parser.add_argument('--para_lr_train', default=[3e-3, 3e-5, 3e-7, 3e-12], type=f
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
 parser.add_argument('--temperature', default=2, type=float, help="temperature parameter for SGHMC")
+parser.add_argument('--para_lr_decay', default=0.8, type=float, help='decay factor for para_lr')
+parser.add_argument('--impute_lr_decay', default=0.8, type=float, help='decay factor for impute_lr')
 
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
@@ -81,6 +83,8 @@ def main():
     training_epochs = args.train_epoch
     pretrain_epochs = args.pretrain_epoch
     fine_tune_epochs = args.fine_tune_epoch
+    para_lr_decay = args.para_lr_decay
+    impute_lr_decay = args.impute_lr_decay
 
     # imputation parameters
     impute_lrs = args.impute_lr
@@ -111,6 +115,8 @@ def main():
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     base_path = os.path.join(base_path, basic_spec, spec)
+    decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
+    base_path = os.path.join(base_path, basic_spec, spec, decay_spec)
 
     # Training starts here
     for prune_seed in range(num_seed):
@@ -149,7 +155,8 @@ def main():
         # parameters for training
         optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
                           mh_step=mh_step, sigma_list=sigma_list, temperature=args.temperature, prior_sigma_0=prior_sigma_0,
-                          prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, scalar_y=y_scale)
+                          prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, scalar_y=y_scale,
+                          para_lr_decay=para_lr_decay, impute_lr_decay=impute_lr_decay)
 
         # pretrain
         print("Pretrain")
