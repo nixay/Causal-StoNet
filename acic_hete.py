@@ -114,7 +114,6 @@ def main():
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
-    base_path = os.path.join(base_path, basic_spec, spec)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
     base_path = os.path.join(base_path, basic_spec, spec, decay_spec)
 
