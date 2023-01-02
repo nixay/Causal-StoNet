@@ -124,9 +124,9 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 optimizer_list[i].param_groups[0]['lr'] = init_para_lrs[i]/(1+init_para_lrs[i]*epoch**para_lr_decay)
             optimizer_list[-1].param_groups[0]['lr'] = init_para_lrs[-1]/(1+init_para_lrs[-1]*epoch**para_lr_decay)
 
-        print("impute_lrs", step_impute_lrs)
-        for i in range(net.num_hidden):
-            print("para_lr", optimizer_list[i].param_groups[0]['lr'])
+        # print("impute_lrs", step_impute_lrs)
+        # for i in range(net.num_hidden):
+        #     print("para_lr", optimizer_list[i].param_groups[0]['lr'])
 
         for y, treat, x in train_data:
             # backward imputation
