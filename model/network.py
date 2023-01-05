@@ -27,7 +27,7 @@ class StoNet_Causal(nn.Module):
         self.mask = None
 
         self.sse = nn.MSELoss(reduction='sum')
-        self.treat_loss = nn.BCEWithLogitsLoss()
+        self.treat_loss = nn.BCEWithLogitsLoss(reduction='sum')
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -54,7 +54,7 @@ class StoNet_Causal(nn.Module):
         self.prune_flag = 0
         self.mask = None
 
-    def likelihood(self, forward_hidden, hidden_list, layer_index, loss_sum, sigma_list, y):
+    def likelihood(self, forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list, y):
         if layer_index == 0:  # log_likelihood(Y_1|X)
             likelihood = -self.sse(forward_hidden, hidden_list[layer_index]) / (2 * sigma_list[
                 layer_index])
@@ -64,7 +64,7 @@ class StoNet_Causal(nn.Module):
 
             z_treat = z[:, self.treat_node]
             treat = hidden_list[layer_index][:, self.treat_node]
-            likelihood_treat = -self.treat_loss(z_treat, treat)/(2 * sigma_list[layer_index])
+            likelihood_treat = -self.treat_loss(z_treat, treat)
 
             z_rest_1 = z[:, 0:self.treat_node]
             temp1 = hidden_list[layer_index][:, 0:self.treat_node]
@@ -77,7 +77,7 @@ class StoNet_Causal(nn.Module):
             likelihood = likelihood_treat + likelihood_rest_1 + likelihood_rest_2
 
         elif layer_index == self.num_hidden:  # log_likelihood(Y|Y_h)
-            likelihood = -loss_sum(self.module_list[layer_index](hidden_list[layer_index-1]), y) / (
+            likelihood = -outcome_loss(self.module_list[layer_index](hidden_list[layer_index - 1]), y) / (
                     2 * sigma_list[self.num_hidden])
 
         else:  # log_likelihood(Y_i|Y_i-1)
@@ -85,7 +85,7 @@ class StoNet_Causal(nn.Module):
                                    hidden_list[layer_index]) / (2 * sigma_list[layer_index])
         return likelihood
 
-    def backward_imputation(self, mh_step, impute_lrs, alpha, temperature, loss_sum, sigma_list, x, treat, y):
+    def backward_imputation(self, mh_step, impute_lrs, alpha, temperature, outcome_loss, sigma_list, x, treat, y):
         # initialize momentum term and hidden units
         hidden_list, momentum_list = [], []
         hidden_list.append(self.module_list[0](x).detach())
@@ -105,8 +105,8 @@ class StoNet_Causal(nn.Module):
             for layer_index in reversed(range(self.num_hidden)):
                 hidden_list[layer_index].grad = None
 
-                hidden_likelihood1 = self.likelihood(forward_hidden, hidden_list, layer_index + 1, loss_sum, sigma_list, y)
-                hidden_likelihood2 = self.likelihood(forward_hidden, hidden_list, layer_index, loss_sum, sigma_list, y)
+                hidden_likelihood1 = self.likelihood(forward_hidden, hidden_list, layer_index + 1, outcome_loss, sigma_list, y)
+                hidden_likelihood2 = self.likelihood(forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list, y)
 
                 hidden_likelihood1.backward()
                 hidden_likelihood2.backward()
