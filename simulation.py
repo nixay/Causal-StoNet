@@ -13,9 +13,10 @@ import json
 parser = argparse.ArgumentParser(description='Run Simulation for Causal StoNet')
 # Basic Setting
 # simulation setting
-parser.add_argument('--data_seed', default=1, type=int, help='set seed for data_scripts generation')
+parser.add_argument('--data_seed', default=1, type=int, help='set seed for data generation')
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
-parser.add_argument('--data_name', default = 'cor', type=str, help='name of simulation dataset')
+parser.add_argument('--data_name', default='cor', type=str, help='name of simulation dataset')
+parser.add_argument('--input_dim', default=100, type=int, help='dimension of input variable')
 
 # dataset setting
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
@@ -32,6 +33,8 @@ parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nar
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
+parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
+parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
 # training setting
 parser.add_argument('--pretrain_epoch', default=100, type=int, help='total number of pretraining epochs')
@@ -43,6 +46,8 @@ parser.add_argument('--para_lr_train', default=[1e-3, 1e-5, 1e-7, 1e-12], type=f
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
 parser.add_argument('--temperature', default=2, type=float, help="temperature parameter for SGHMC")
+parser.add_argument('--para_lr_decay', default=0.8, type=float, help='decay factor for para_lr')
+parser.add_argument('--impute_lr_decay', default=0.8, type=float, help='decay factor for impute_lr')
 
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
@@ -60,36 +65,36 @@ args = parser.parse_args()
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # network setup
-    num_hidden = args.layer
-    treat_depth = args.depth
-    hidden_dim = args.unit
-    treat_node = args.treat_node
-    input_dim = 100
-    output_dim = 1
+    # task
+    classification_flag = args.classification_flag
 
     # generate dataset
+    data_name = args.data_name
     data_seed = args.data_seed
-    partition_seed = args.partition_seed
     train_size = args.train_size
     val_size = args.val_size
     test_size = args.test_size
-    data_name = args.data_name
+    data_generate_args = dict(input_size=args.input_dim, seed=data_seed, data_size=train_size+val_size+test_size)
 
     if data_name == "cor":
-        data = SimData_Causal(input_dim, data_seed, train_size + val_size + test_size)
+        data = SimData_Causal(**data_generate_args)
     else:
-        data = SimData_Causal_Ind(input_dim, data_seed, train_size + val_size + test_size)
+        data = SimData_Causal_Ind(**data_generate_args)
 
     train_set, val_set, test_set = random_split(data, [train_size, val_size, test_size],
-                                      generator=torch.Generator().manual_seed(partition_seed))
+                                      generator=torch.Generator().manual_seed(args.partition_seed))
 
-    # load training data_scripts and validation data_scripts
+    # load training data and validation data
     num_workers = args.num_workers
     batch_size = args.batch_size
     train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     test_data = DataLoader(test_set, batch_size=test_size, num_workers=num_workers)
+
+    # network setup
+    net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=data.x[0].size(dim=0),
+                    output_dim=len(data.y.unique()) if classification_flag else 1,
+                    treat_layer=args.depth, treat_node=args.treat_node)
 
     # set number of independent runs for sparsity
     num_seed = args.num_run
@@ -101,13 +106,13 @@ def main():
     training_epochs = args.train_epoch
     pretrain_epochs = args.pretrain_epoch
     fine_tune_epochs = args.fine_tune_epoch
+    para_lr_decay = args.para_lr_decay
+    impute_lr_decay = args.impute_lr_decay
 
     # imputation parameters
     impute_lrs = args.impute_lr
-    alpha = args.impute_alpha
     mh_step = args.mh_step
     sigma_list = args.sigma
-    temperature = args.temperature
 
     # prior parameters
     prior_sigma_0 = args.sigma0
@@ -125,6 +130,9 @@ def main():
     num_selection_treat_list = np.zeros([num_seed])  # number of selected input for treatment
     train_loss_list = np.zeros([num_seed])
     val_loss_list = np.zeros([num_seed])
+    if classification_flag:
+        train_acc_list = np.zeros([num_seed])
+        val_acc_list = np.zeros([num_seed])
     ate_list = np.zeros([num_seed+1])
     ate_list[-1] = data.true_ate()
 
@@ -133,7 +141,8 @@ def main():
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
-    base_path = os.path.join(base_path, basic_spec, spec)
+    decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
+    base_path = os.path.join(base_path, basic_spec, spec, decay_spec)
 
     for prune_seed in range(num_seed):
         print('number of runs', prune_seed)
@@ -148,9 +157,10 @@ def main():
                 else:
                     raise
 
+        # initialize network
         np.random.seed(prune_seed)
         torch.manual_seed(prune_seed)
-        net = StoNet_Causal(num_hidden, hidden_dim, input_dim, output_dim, treat_depth, treat_node)
+        net = StoNet_Causal(**net_args)
         net.to(device)
 
         # optimizer
@@ -166,9 +176,10 @@ def main():
             optimizer_list_fine_tune.append(SGD(net.module_list[j].parameters(), lr=para_lrs_fine_tune[j],
                                             momentum=para_momentum, maximize=True))
 
-        optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=alpha, mh_step=mh_step,
-                          sigma_list=sigma_list, temperature=temperature, prior_sigma_0=prior_sigma_0,
-                          prior_sigma_1=prior_sigma_1, lambda_n=lambda_n)
+        optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
+                          mh_step=mh_step, sigma_list=sigma_list, temperature=args.temperature, prior_sigma_0=prior_sigma_0,
+                          prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
+                          impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag)
         # pretrain
         print("Pretrain")
         output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
@@ -316,10 +327,11 @@ def main():
         num_gamma_file.close()
 
         # save training results for this run
-        train_loss = performance_fine_tune['train_loss'][-1]
-        train_loss_list[prune_seed] = train_loss
-        val_loss = performance_fine_tune['val_loss'][-1]
-        val_loss_list[prune_seed] = val_loss
+        train_loss_list[prune_seed] = performance_fine_tune['train_loss'][-1]
+        val_loss_list[prune_seed] = performance_fine_tune['val_loss'][-1]
+        if classification_flag:
+            train_acc_list[prune_seed] = performance_fine_tune['train_acc'][-1]
+            val_acc_list[prune_seed] = performance_fine_tune['val_acc'][-1]
 
         # calculate BIC
         with torch.no_grad():
@@ -351,6 +363,9 @@ def main():
 
     np.savetxt(os.path.join(base_path, 'Overall_train_loss.txt'), train_loss_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_val_loss.txt'), val_loss_list, fmt="%s")
+    if classification_flag:
+        np.savetxt(os.path.join(base_path, 'Overall_train_acc.txt'), train_acc_list, fmt="%s")
+        np.savetxt(os.path.join(base_path, 'Overall_val_acc.txt'), val_acc_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_BIC.txt'), BIC_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_non_zero_connections.txt'), dim_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_selected_variables_out.txt'), num_selection_out_list, fmt="%s")
