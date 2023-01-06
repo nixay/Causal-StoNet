@@ -27,6 +27,8 @@ parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nar
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
+parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
+parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
 # training setting
 parser.add_argument('--pretrain_epoch', default=100, type=int, help='total number of pretraining epochs')
@@ -57,6 +59,9 @@ args = parser.parse_args()
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # task
+    classification_flag = args.classification_flag
+
     # dataset setting
     dgp = args.acic_dgp
     data = acic_data_homo(dgp)
@@ -72,7 +77,8 @@ def main():
 
     # network setup
     _, _, x_temp = next(iter(train_set))
-    net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=x_temp.size(dim=0), output_dim=1,
+    net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=x_temp.size(dim=0),
+                    output_dim=len(data.y.unique()) if classification_flag else 1,
                     treat_layer=args.depth, treat_node=args.treat_node)
 
     # number of independent runs for sparsity
@@ -109,6 +115,9 @@ def main():
     num_selection_treat_list = np.zeros([num_seed])  # number of selected input for treatment
     train_loss_list = np.zeros([num_seed])
     val_loss_list = np.zeros([num_seed])
+    if classification_flag:
+        train_acc_list = np.zeros([num_seed])
+        val_acc_list = np.zeros([num_seed])
     ate_list = np.zeros([num_seed])  # estimated average treatment effect
 
     # path to save the result
@@ -157,7 +166,7 @@ def main():
         optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
                           mh_step=mh_step, sigma_list=sigma_list, temperature=args.temperature, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, scalar_y=y_scale,
-                          para_lr_decay=para_lr_decay, impute_lr_decay=impute_lr_decay)
+                          para_lr_decay=para_lr_decay, impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag)
 
         # pretrain
         print("Pretrain")
@@ -307,10 +316,11 @@ def main():
 
         # save training results for the final run
         # will need to transfer the losses back to the original scale
-        train_loss = performance_fine_tune['train_loss'][-1]
-        train_loss_list[prune_seed] = train_loss
-        val_loss = performance_fine_tune['val_loss'][-1]
-        val_loss_list[prune_seed] = val_loss
+        train_loss_list[prune_seed] = performance_fine_tune['train_loss'][-1]
+        val_loss_list[prune_seed] = performance_fine_tune['val_loss'][-1]
+        if classification_flag:
+            train_acc_list[prune_seed] = performance_fine_tune['train_acc'][-1]
+            val_acc_list[prune_seed] = performance_fine_tune['val_acc'][-1]
 
         # calculate non-zero connections and BIC
         with torch.no_grad():
@@ -325,7 +335,7 @@ def main():
             print("number of non-zero connections:", num_non_zero_element.item())
             print('BIC:', BIC)
 
-        # calculate doubly-robust estimator of ate
+        # calculate doubly-robust estimator of ate: outcome variable is continuous; scaling back is needed
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in test_data:
@@ -346,6 +356,9 @@ def main():
     # save overall performance
     np.savetxt(os.path.join(base_path, 'Overall_train_loss.txt'), train_loss_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_val_loss.txt'), val_loss_list, fmt="%s")
+    if classification_flag:
+        np.savetxt(os.path.join(base_path, 'Overall_train_acc.txt'), train_acc_list, fmt="%s")
+        np.savetxt(os.path.join(base_path, 'Overall_val_acc.txt'), val_acc_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_BIC.txt'), BIC_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_non_zero_connections.txt'), dim_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_selected_variables_out.txt'), num_selection_out_list, fmt="%s")
@@ -357,7 +370,7 @@ def main():
     dump(y_scalar, open(os.path.join(base_path, 'y_scalar.pkl'), 'wb'))
     # # to load the scalar:
     # from pickle import load
-    # y_scalar = load(open('directory/y_scalar', 'rb'))
+    # y_scalar = load(open('directory/y_scalar.pkl', 'rb'))
 
 
 if __name__ == '__main__':
