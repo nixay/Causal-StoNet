@@ -228,6 +228,7 @@ class SimData_Causal_Ind(Dataset):
 class acic_data_homo(Dataset):
     """
     Load ACIC data with specific data generating process number
+    need to scale the numerical variables
     dgp: int
         data generating process number
     """
@@ -276,6 +277,7 @@ class acic_data_homo(Dataset):
 class acic_data_hete(Dataset):
     """
     load ACIC test data that combines different dgp to create heterogeneous treatment effect
+    need to scale the numerical variables
     """
     def __init__(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -324,6 +326,7 @@ class acic_data_hete(Dataset):
 class PensionData(Dataset):
     """
     load 401k dataset
+    need to scale the numerical variables
     """
     def __init__(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -345,4 +348,30 @@ class PensionData(Dataset):
         y = torch.FloatTensor(self.y[idx]).to(self.device)
         treat = self.treat[idx]
         x = torch.FloatTensor(np.concatenate((self.num_var[idx], self.cat_var[idx]))).to(self.device)
+        return y, treat, x
+
+
+# Twins Dataset
+class TwinsData(Dataset):
+    """
+    load twins dataset
+    all the columns are categorical (or binary) variables, no need to scale the data
+    """
+    def __init__(self):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        data = pd.read_csv("./raw_data/twins/twins_data.csv")
+        self.data_size = len(data.index)
+
+        self.y = torch.FloatTensor(np.array(data['y'])).long().to(device)
+        self.treat = torch.FloatTensor(np.array(data['treat'], dtype=np.float32)).to(device)
+        self.x = torch.FloatTensor(np.array(data.loc[:, ~data.columns.isin(['y', 'treat'])], dtype=np.float32)).to(device)
+
+    def __len__(self):
+        return int(self.data_size)
+
+    def __getitem__(self, idx):
+        y = self.y[idx]
+        treat = self.treat[idx]
+        x = self.x[idx]
         return y, treat, x
