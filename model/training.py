@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
              sigma_list, temperature, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
-             impute_lr_decay, scalar_y=1, outcome_cat=False):
+             impute_lr_decay, treat_loss_scalar, scalar_y=1, outcome_cat=False):
 
     """
     train the network
@@ -48,6 +48,9 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         the type of outcome variable
         if TRUE, the outcome variable is a categorical variable, and this is a regression task
         if False, the outcome variable is a numerical variable, and this is a classification task
+    treat_loss_scalar:
+        adjust the scale of treatment loss (to make sure that the signal from treatment is strong enough)
+
 
     output:
     para_path: dictionary
@@ -72,13 +75,19 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
     """
 
     # save training and validation performance
-    train_loss_path = []
-    val_loss_path = []
-    performance = dict(train_loss=train_loss_path, val_loss=val_loss_path)
+    out_train_loss_path = []
+    out_val_loss_path = []
+    treat_train_loss_path = []
+    treat_val_loss_path = []
+    treat_train_acc_path = []
+    treat_val_acc_path = []
+    performance = dict(out_train_loss=out_train_loss_path, out_val_loss=out_val_loss_path,
+                       treat_train_loss=treat_train_loss_path, treat_val_loss=treat_val_loss_path,
+                       treat_train_acc=treat_train_acc_path, treat_val_acc=treat_val_acc_path)
     if outcome_cat:
-        train_accuracy_path = []
-        val_accuracy_path = []
-        performance.update([('train_acc', train_accuracy_path), ('val_acc', val_accuracy_path)])
+        out_train_acc_path = []
+        out_val_acc_path = []
+        performance.update([('out_train_acc', out_train_acc_path), ('out_val_acc', out_val_acc_path)])
 
     para_path = {}
     para_grad_path = {}
@@ -106,11 +115,14 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
 
     # settings for output loss functions
     if outcome_cat:
-        loss = nn.CrossEntropyLoss()
-        loss_sum = nn.CrossEntropyLoss(reduction='sum')
+        out_loss = nn.CrossEntropyLoss()
+        out_loss_sum = nn.CrossEntropyLoss(reduction='sum')
     else:
-        loss = nn.MSELoss()
-        loss_sum = nn.MSELoss(reduction='sum')
+        out_loss = nn.MSELoss()
+        out_loss_sum = nn.MSELoss(reduction='sum')
+
+    # treatment loss function
+    treat_loss = nn.BCELoss()
 
     # intermediate values for prior gradient calculation
     c1 = np.log(lambda_n) - np.log(1 - lambda_n) + 0.5 * np.log(prior_sigma_0) - 0.5 * np.log(prior_sigma_1)
@@ -142,8 +154,8 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
 
         for y, treat, x in train_data:
             # backward imputation
-            hidden_list = net.backward_imputation(mh_step, step_impute_lrs, alpha, temperature, loss_sum, sigma_list, x,
-                                                  treat, y)
+            hidden_list = net.backward_imputation(mh_step, step_impute_lrs, alpha, temperature, out_loss_sum, sigma_list, x,
+                                                  treat, y, treat_loss_scalar)
 
             # parameter update
             for para in net.parameters():
@@ -158,51 +170,73 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
 
             for layer_index in range(net.num_hidden + 1):
                 forward_hidden = net.module_list[0](x)
-                likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, loss_sum, sigma_list, y)/batch_size
+                likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
+                                            treat_loss_scalar)/batch_size
                 optimizer = optimizer_list[layer_index]
                 likelihood.backward()
                 optimizer.step()
 
                 if epoch == epochs-1:
                     with torch.no_grad():
-                        likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, loss_sum, sigma_list, y)
+                        likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
+                                                    treat_loss_scalar)
                         hidden_likelihood[layer_index] += likelihood
 
         # calculate training performance
-        train_loss, train_correct = 0, 0
+        out_train_loss, out_train_correct, treat_train_loss, treat_train_correct = 0, 0, 0, 0
         with torch.no_grad():
             for y, treat, x in train_data:
-                pred, _ = net.forward(x, treat)
-                train_loss += loss(pred, y).item()
+                pred, ps = net.forward(x, treat)
+                out_train_loss += out_loss(pred, y).item()
+                treat_train_loss += treat_loss(ps, treat).item()
+                treat_train_correct += ((ps > 0.5) == treat).sum().item()
                 if outcome_cat:
-                    train_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+                    out_train_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
 
-        # use RMSE as the model performance metric
-        train_loss = np.sqrt(train_loss/len(train_data)) * scalar_y
-        train_loss_path.append(train_loss)
-        print(f"Avg train loss: {train_loss:>8f} \n")
+        if outcome_cat is False:
+            # use RMSE as the model performance metric for regression tasks
+            out_train_loss = np.sqrt(out_train_loss/len(train_data)) * scalar_y
+        else:
+            out_train_loss /= len(train_data)
+        out_train_loss_path.append(out_train_loss)
+        print(f"Avg train loss: {out_train_loss:>8f} \n")
         if outcome_cat:
-            train_correct /= len(train_data.dataset)
-            train_accuracy_path.append(train_correct)
-            print(f"train accuracy: {train_correct:>8f} \n")
+            out_train_correct /= len(train_data.dataset)
+            out_train_acc_path.append(out_train_correct)
+            print(f"train accuracy: {out_train_correct:>8f} \n")
+
+        treat_train_loss /= len(train_data)
+        treat_train_loss_path.append(treat_train_loss)
+        treat_train_correct /= len(train_data.dataset)
+        treat_train_acc_path.append(treat_train_correct)
 
         # calculate validation performance
-        val_loss, val_correct = 0, 0
+        out_val_loss, out_val_correct, treat_val_loss, treat_val_correct = 0, 0, 0, 0
         with torch.no_grad():
             for y, treat, x in val_data:
-                pred, _ = net.forward(x, treat)
-                val_loss += loss(pred, y).item()
+                pred, ps = net.forward(x, treat)
+                out_val_loss += out_loss(pred, y).item()
+                treat_val_loss += treat_loss(ps, treat).item()
+                treat_val_correct += ((ps > 0.5) == treat).sum().item()
                 if outcome_cat:
-                    val_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+                    out_val_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
 
-        # use RMSE as the model performance metric
-        val_loss = np.sqrt(val_loss/len(val_data)) * scalar_y
-        val_loss_path.append(val_loss)
-        print(f"Avg val loss: {val_loss:>8f} \n")
+        if outcome_cat is False:
+            # use RMSE as the model performance metric for regression tasks
+            out_val_loss = np.sqrt(out_val_loss/len(val_data)) * scalar_y
+        else:
+            out_val_loss /= len(val_data)
+        out_val_loss_path.append(out_val_loss)
+        print(f"Avg val loss: {out_val_loss:>8f} \n")
         if outcome_cat:
-            val_correct /= len(val_data.dataset)
-            val_accuracy_path.append(train_correct)
-            print(f"val accuracy: {train_correct:>8f} \n")
+            out_val_correct /= len(val_data.dataset)
+            out_val_acc_path.append(out_val_correct)
+            print(f"val accuracy: {out_val_correct:>8f} \n")
+
+        treat_val_loss /= len(val_data)
+        treat_val_loss_path.append(treat_val_loss)
+        treat_val_correct /= len(val_data.dataset)
+        treat_val_acc_path.append(treat_val_correct)
 
         # toc = time.time()
         # accumulated_time += toc - tic
