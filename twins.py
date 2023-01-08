@@ -26,6 +26,7 @@ parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nar
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
+parser.add_argument('--treat_loss_scalar', default=1e3, type=float, help='multiplier to scale the treatment loss')
 parser.add_argument('--regression', dest='classification_flag', action='store_true', help='true for regression')
 parser.add_argument('--classification', dest='classification_flag', action='store_false', help='false for classification')
 
@@ -93,6 +94,7 @@ def main():
     fine_tune_epochs = args.fine_tune_epoch
     para_lr_decay = args.para_lr_decay
     impute_lr_decay = args.impute_lr_decay
+    treat_loss_scalar = args.treat_loss_scalar
 
     # imputation parameters
     impute_lrs = args.impute_lr
@@ -113,16 +115,20 @@ def main():
     BIC_list = np.zeros([num_seed])  # BIC
     num_selection_out_list = np.zeros([num_seed])  # number of selected input for outcome variable
     num_selection_treat_list = np.zeros([num_seed])  # number of selected input for treatment
-    train_loss_list = np.zeros([num_seed])
-    val_loss_list = np.zeros([num_seed])
+    out_train_loss_list = np.zeros([num_seed])
+    out_val_loss_list = np.zeros([num_seed])
     if classification_flag:
-        train_acc_list = np.zeros([num_seed])
-        val_acc_list = np.zeros([num_seed])
+        out_train_acc_list = np.zeros([num_seed])
+        out_val_acc_list = np.zeros([num_seed])
+    treat_train_loss_list = np.zeros([num_seed])
+    treat_val_loss_list = np.zeros([num_seed])
+    treat_train_acc_list = np.zeros([num_seed])
+    treat_val_acc_list = np.zeros([num_seed])
     ate_list = np.zeros([num_seed])  # estimated average treatment effect
 
     # path to save the result
     base_path = os.path.join('.', 'pension', 'result')
-    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)
+    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)+ '_' + str(treat_loss_scalar)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
@@ -166,7 +172,8 @@ def main():
         optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
                           mh_step=mh_step, sigma_list=sigma_list, temperature=args.temperature, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
-                          impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag)
+                          impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
+                          treat_loss_scalar=treat_loss_scalar)
 
         # pretrain
         print("Pretrain")
@@ -315,11 +322,16 @@ def main():
         num_gamma_file.close()
 
         # save training results for the final run
-        train_loss_list[prune_seed] = performance_fine_tune['train_loss'][-1]
-        val_loss_list[prune_seed] = performance_fine_tune['val_loss'][-1]
+        out_train_loss_list[prune_seed] = performance_fine_tune['out_train_loss'][-1]
+        out_val_loss_list[prune_seed] = performance_fine_tune['out_val_loss'][-1]
         if classification_flag:
-            train_acc_list[prune_seed] = performance_fine_tune['train_acc'][-1]
-            val_acc_list[prune_seed] = performance_fine_tune['val_acc'][-1]
+            out_train_acc_list[prune_seed] = performance_fine_tune['out_train_acc'][-1]
+            out_val_acc_list[prune_seed] = performance_fine_tune['out_val_acc'][-1]
+
+        treat_train_loss_list[prune_seed] = performance_fine_tune['treat_train_loss'][-1]
+        treat_val_loss_list[prune_seed] = performance_fine_tune['treat_val_loss'][-1]
+        treat_train_acc_list[prune_seed] = performance_fine_tune['treat_train_acc'][-1]
+        treat_val_acc_list[prune_seed] = performance_fine_tune['treat_val_acc'][-1]
 
         # calculate non-zero connections and BIC
         with torch.no_grad():
@@ -357,11 +369,15 @@ def main():
         torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
 
     # save overall performance
-    np.savetxt(os.path.join(base_path, 'Overall_train_loss.txt'), train_loss_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_val_loss.txt'), val_loss_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_train_loss_out.txt'), out_train_loss_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_val_loss_out.txt'), out_val_loss_list, fmt="%s")
     if classification_flag:
-        np.savetxt(os.path.join(base_path, 'Overall_train_acc.txt'), train_acc_list, fmt="%s")
-        np.savetxt(os.path.join(base_path, 'Overall_val_acc.txt'), val_acc_list, fmt="%s")
+        np.savetxt(os.path.join(base_path, 'Overall_train_acc_out.txt'), out_train_acc_list, fmt="%s")
+        np.savetxt(os.path.join(base_path, 'Overall_val_acc_out.txt'), out_val_acc_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_train_loss_treat.txt'), treat_train_loss_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_val_loss_treat.txt'), treat_val_loss_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_train_acc_treat.txt'), treat_train_acc_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_val_acc_treat.txt'), treat_val_acc_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_BIC.txt'), BIC_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_non_zero_connections.txt'), dim_list, fmt="%s")
     np.savetxt(os.path.join(base_path, 'Overall_selected_variables_out.txt'), num_selection_out_list, fmt="%s")
