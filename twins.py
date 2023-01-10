@@ -127,7 +127,7 @@ def main():
     ate_list = np.zeros([num_seed])  # estimated average treatment effect
 
     # path to save the result
-    base_path = os.path.join('.', 'pension', 'result')
+    base_path = os.path.join('.', 'twins', 'result')
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)+ '_' + str(treat_loss_scalar)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
