@@ -6,7 +6,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
-             sigma_list, temperature, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
+             sigma_list, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
              impute_lr_decay, treat_loss_scalar, scalar_y=1, outcome_cat=False):
 
     """
@@ -33,8 +33,6 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         the number of backward imputation steps
     sigma_list: list of floats
         gaussian noise for each layer of the network
-    temperature: int
-        temperature for SGHMC
     prior_sigma_0, prior_sigma_1: float
         variances for mixture gaussian prior
     lambda_n: float
@@ -154,7 +152,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
 
         for y, treat, x in train_data:
             # backward imputation
-            hidden_list = net.backward_imputation(mh_step, step_impute_lrs, alpha, temperature, out_loss_sum, sigma_list, x,
+            hidden_list = net.backward_imputation(mh_step, step_impute_lrs, alpha, out_loss_sum, sigma_list, x,
                                                   treat, y, treat_loss_scalar)
 
             # parameter update
@@ -178,8 +176,11 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
 
                 if epoch == epochs-1:
                     with torch.no_grad():
+                        # need to recalculate likelihood afater the last parameter update
+                        # make sure that treat loss have the same weight as outcome loss
+                        forward_hidden = net.module_list[0](x)
                         likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
-                                                    treat_loss_scalar)
+                                                    treat_loss_scalar=1/(2 * sigma_list[-1]))
                         hidden_likelihood[layer_index] += likelihood
 
         # calculate training performance
