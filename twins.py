@@ -1,7 +1,7 @@
 from model.network import StoNet_Causal
 from model.training import training
-from data import TwinsData
-from torch.utils.data import DataLoader, random_split
+from data import TwinsData, data_preprocess
+from torch.utils.data import DataLoader
 import torch
 import numpy as np
 import argparse
@@ -17,41 +17,41 @@ parser = argparse.ArgumentParser(description='Run Causal StoNet for twins data')
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
+parser.add_argument('--cross_fit_no', default=1, type=int, help='the indicator for training set in three-fold cross-fitting')
 
 # Parameter for StoNet
 # model
-parser.add_argument('--layer', default=3, type=int, help='number of hidden layer (not including the treatment layer')
-parser.add_argument('--unit', default=[6, 4, 3], type=int, nargs='+', help='number of hidden unit in each layer')
-parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nargs='+',
+parser.add_argument('--layer', default=3, type=int, help='number of hidden layer')
+parser.add_argument('--unit', default=[16, 8, 4], type=int, nargs='+', help='number of hidden unit in each layer')
+parser.add_argument('--sigma', default=[1e-3, 1e-4, 1e-5, 1e-6], type=float, nargs='+',
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
-parser.add_argument('--treat_loss_scalar', default=1e3, type=float, help='multiplier to scale the treatment loss')
-parser.add_argument('--regression', dest='classification_flag', action='store_true', help='true for regression')
-parser.add_argument('--classification', dest='classification_flag', action='store_false', help='false for classification')
+parser.add_argument('--treat_loss_scalar', default=200, type=float, help='multiplier to scale the treatment loss')
+parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
+parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
 # training setting
 parser.add_argument('--pretrain_epoch', default=100, type=int, help='total number of pretraining epochs')
 parser.add_argument('--train_epoch', default=1500, type=int, help='total number of training epochs')
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
-parser.add_argument('--impute_lr', default=[3e-3, 3e-4, 1e-6], type=float, nargs='+', help='step size for SGHMC')
+parser.add_argument('--impute_lr', default=[1e-2, 9e-3, 9e-5], type=float, nargs='+', help='step size for SGHMC')
 parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum weight for SGHMC')
-parser.add_argument('--para_lr_train', default=[3e-3, 3e-5, 3e-7, 3e-12], type=float, nargs='+',
+parser.add_argument('--para_lr_train', default=[1e-3, 1e-4, 1e-5, 1e-9], type=float, nargs='+',
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
-parser.add_argument('--temperature', default=2, type=float, help="temperature parameter for SGHMC")
-parser.add_argument('--para_lr_decay', default=0.8, type=float, help='decay factor for para_lr')
-parser.add_argument('--impute_lr_decay', default=0.8, type=float, help='decay factor for impute_lr')
+parser.add_argument('--para_lr_decay', default=1.2, type=float, help='decay factor for para_lr')
+parser.add_argument('--impute_lr_decay', default=1, type=float, help='decay factor for impute_lr')
 
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
-parser.add_argument('--para_lr_fine_tune', default=[3e-4, 3e-6, 3e-8, 3e-13], type=float, nargs='+',
+parser.add_argument('--para_lr_fine_tune', default=[1e-4, 1e-5, 1e-6, 1e-10], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
 # prior setting
-parser.add_argument('--sigma0', default=2e-5, type=float, help='sigma_0^2 in prior')
-parser.add_argument('--sigma1', default=1e-2, type=float, help='sigma_1^2 in prior')
-parser.add_argument('--lambda_n', default=1e-4, type=float, help='lambda_n in prior')
+parser.add_argument('--sigma0', default=5e-4, type=float, help='sigma_0^2 in prior')
+parser.add_argument('--sigma1', default=1e-1, type=float, help='sigma_1^2 in prior')
+parser.add_argument('--lambda_n', default=1e-6, type=float, help='lambda_n in prior')
 
 args = parser.parse_args()
 
@@ -64,18 +64,14 @@ def main():
 
     # dataset setting
     data = TwinsData()
-    data_size = data.__len__()
-    train_size = int(data_size*0.6)
-    val_size = int(data_size*0.2)
-    train_set, val_set, test_set = random_split(data, [train_size, val_size, data_size-train_size-val_size],
-                                                generator=torch.Generator().manual_seed(args.partition_seed))
+    cross_fit_no = args.cross_fit_no
+    train_set, val_set = data_preprocess(data, args.partition_seed, cross_fit_no, False)
 
     # load training data and validation data
     num_workers = args.num_workers
     batch_size = args.batch_size
     train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    test_data = DataLoader(test_set, batch_size=test_set.__len__(), num_workers=num_workers)
 
     # network setup
     net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=data.x[0].size(dim=0),
@@ -132,7 +128,7 @@ def main():
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
-    base_path = os.path.join(base_path, basic_spec, spec, decay_spec)
+    base_path = os.path.join(base_path, basic_spec, spec, decay_spec, str(cross_fit_no))
 
     # Training starts here
     for prune_seed in range(num_seed):
@@ -170,7 +166,7 @@ def main():
 
         # parameters for training
         optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
-                          mh_step=mh_step, sigma_list=sigma_list, temperature=args.temperature, prior_sigma_0=prior_sigma_0,
+                          mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
                           impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
                           treat_loss_scalar=treat_loss_scalar)
@@ -279,7 +275,7 @@ def main():
         output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
                                     impute_lrs=impute_lrs_fine_tune, **optim_args)
         para_fine_tune = output_fine_tune["para_path"]
-        para_grad_fine_tune = output_train["para_grad_path"]
+        para_grad_fine_tune = output_fine_tune["para_grad_path"]
         para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
         var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
         num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
@@ -350,17 +346,17 @@ def main():
         m = nn.Softmax(dim=1)
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
-            for y, treat, x in test_data:
-                pred, prop_score = net.forward(x, treat)
-                pred = m(pred).max(1).values
-                counter_fact, _ = net.forward(x, 1 - treat)
-                counter_fact = m(counter_fact).max(1).values
-                outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
+            for y, treat, x in val_data:
+                pred_score, prop_score = net.forward(x, treat)
+                pred_prob = m(pred_score)[:, 1]  # E[Y|X, A] = P(Y=1|X, A)
+                counter_fact_score, _ = net.forward(x, 1 - treat)
+                counter_fact_prob = m(counter_fact_score)[:, 1]
+                outcome_contrast = torch.flatten(pred_prob-counter_fact_prob) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
-                pred_resid = torch.flatten(y - pred)
-                ate_db = torch.mean(outcome_contrast + prop_contrast * pred_resid)
+                pred_resid = torch.flatten(y - pred_prob)
+                ate_db += torch.sum(outcome_contrast + prop_contrast * pred_resid).item()
 
-            ate_list[prune_seed] = ate_db
+            ate_list[prune_seed] = ate_db/len(val_set)
 
         # # NEED TO IMPLEMENT THE ESTIMATION OF CATE
         # test_indices = test_set.indices
