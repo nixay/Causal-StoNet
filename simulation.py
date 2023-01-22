@@ -22,7 +22,6 @@ parser.add_argument('--input_dim', default=100, type=int, help='dimension of inp
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
 parser.add_argument('--train_size', default=10000, type=int, help='size of training set')
 parser.add_argument('--val_size', default=1000, type=int, help='size of validation set')
-parser.add_argument('--test_size', default=1000, type=int, help='size of validation set')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
 
 # Parameter for StoNet
@@ -47,8 +46,8 @@ parser.add_argument('--para_lr_train', default=[1e-3, 1e-5, 1e-7, 1e-12], type=f
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
 parser.add_argument('--temperature', default=2, type=float, help="temperature parameter for SGHMC")
-parser.add_argument('--para_lr_decay', default=0.8, type=float, help='decay factor for para_lr')
-parser.add_argument('--impute_lr_decay', default=1.2, type=float, help='decay factor for impute_lr')
+parser.add_argument('--para_lr_decay', default=1.2, type=float, help='decay factor for para_lr')
+parser.add_argument('--impute_lr_decay', default=0.8, type=float, help='decay factor for impute_lr')
 
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
@@ -74,15 +73,14 @@ def main():
     data_seed = args.data_seed
     train_size = args.train_size
     val_size = args.val_size
-    test_size = args.test_size
-    data_generate_args = dict(input_size=args.input_dim, seed=data_seed, data_size=train_size+val_size+test_size)
+    data_generate_args = dict(input_size=args.input_dim, seed=data_seed, data_size=train_size+val_size)
 
     if data_name == "cor":
         data = SimData_Causal(**data_generate_args)
     else:
         data = SimData_Causal_Ind(**data_generate_args)
 
-    train_set, val_set, test_set = random_split(data, [train_size, val_size, test_size],
+    train_set, val_set = random_split(data, [train_size, val_size],
                                       generator=torch.Generator().manual_seed(args.partition_seed))
 
     # load training data and validation data
@@ -90,7 +88,6 @@ def main():
     batch_size = args.batch_size
     train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    test_data = DataLoader(test_set, batch_size=test_size, num_workers=num_workers)
 
     # network setup
     net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=data.x[0].size(dim=0),
@@ -143,8 +140,8 @@ def main():
     ate_list[-1] = data.true_ate()
 
     # path to save the result
-    base_path = os.path.join('.', 'simulation', 'result', data_name, str(data_seed))+ '_' + str(treat_loss_scalar)
-    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)
+    base_path = os.path.join('.', 'simulation', 'result', data_name, str(data_seed))
+    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(treat_loss_scalar)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
@@ -361,15 +358,15 @@ def main():
         # calculate doubly-robust estimator of ate
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
-            for y, treat, x in test_data:
+            for y, treat, x in val_data:
                 pred, prop_score = net.forward(x, treat)
                 counter_fact, _ = net.forward(x, 1 - treat)
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
                 pred_resid = torch.flatten(y - pred)
-                ate_db = torch.mean(outcome_contrast + prop_contrast * pred_resid)
+                ate_db += torch.sum(outcome_contrast + prop_contrast * pred_resid)
 
-            ate_list[prune_seed] = ate_db
+            ate_list[prune_seed] = ate_db/len(val_data)
 
         torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
 
