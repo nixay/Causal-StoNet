@@ -99,7 +99,7 @@ class StoNet_Causal(nn.Module):
                                    hidden_list[layer_index]) / (2 * sigma_list[layer_index])
         return likelihood
 
-    def backward_imputation(self, mh_step, impute_lrs, alpha, temperature, outcome_loss, sigma_list, x, treat, y,
+    def backward_imputation(self, mh_step, impute_lrs, alpha, outcome_loss, sigma_list, x, treat, y,
                             treat_loss_scalar):
         # initialize momentum term and hidden units
         hidden_list, momentum_list = [], []
@@ -132,7 +132,7 @@ class StoNet_Causal(nn.Module):
                 with torch.no_grad():
                     momentum_list[layer_index] = (1 - alpha) * momentum_list[layer_index] + lr * hidden_list[
                         layer_index].grad + torch.FloatTensor(hidden_list[layer_index].shape).to(self.device).normal_().mul(
-                        np.sqrt(temperature * alpha))
+                        np.sqrt(2*alpha))
                     if layer_index == self.treat_layer:
                         # treatment node will not be updated
                         momentum_list[layer_index][:, self.treat_node] = torch.zeros_like(treat)
