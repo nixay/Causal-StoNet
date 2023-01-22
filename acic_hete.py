@@ -17,6 +17,7 @@ parser = argparse.ArgumentParser(description='Run Causal StoNet for ACIC data wi
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
+parser.add_argument('--cross_fit_no', default=1, type=int, help='the indicator for training set in three-fold cross-fitting')
 
 # Parameter for StoNet
 # model
@@ -39,7 +40,6 @@ parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum we
 parser.add_argument('--para_lr_train', default=[3e-3, 3e-5, 3e-7, 3e-12], type=float, nargs='+',
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
-parser.add_argument('--temperature', default=2, type=float, help="temperature parameter for SGHMC")
 parser.add_argument('--para_lr_decay', default=0.8, type=float, help='decay factor for para_lr')
 parser.add_argument('--impute_lr_decay', default=0.8, type=float, help='decay factor for impute_lr')
 
@@ -64,7 +64,8 @@ def main():
 
     # dataset setting
     data = acic_data_hete()
-    train_set, val_set, test_set, x_scalar, y_scalar = data_preprocess(data, args.partition_seed)
+    cross_fit_no = args.cross_fit_no
+    train_set, val_set, x_scalar, y_scalar = data_preprocess(data, args.partition_seed, cross_fit_no)
     y_scale = float(y_scalar.scale_)
 
     # load training data and validation data
@@ -72,7 +73,6 @@ def main():
     batch_size = args.batch_size
     train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    test_data = DataLoader(test_set, batch_size=test_set.__len__(), num_workers=num_workers)
 
     # network setup
     _, _, x_temp = next(iter(train_set))
@@ -130,7 +130,7 @@ def main():
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
-    base_path = os.path.join(base_path, basic_spec, spec, decay_spec)
+    base_path = os.path.join(base_path, basic_spec, spec, decay_spec, str(cross_fit_no))
 
     # Training starts here
     for prune_seed in range(num_seed):
@@ -168,7 +168,7 @@ def main():
 
         # parameters for training
         optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
-                          mh_step=mh_step, sigma_list=sigma_list, temperature=args.temperature, prior_sigma_0=prior_sigma_0,
+                          mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, scalar_y=y_scale,
                           para_lr_decay=para_lr_decay, impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
                           treat_loss_scalar=treat_loss_scalar)
@@ -277,7 +277,7 @@ def main():
         output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
                                     impute_lrs=impute_lrs_fine_tune, **optim_args)
         para_fine_tune = output_fine_tune["para_path"]
-        para_grad_fine_tune = output_train["para_grad_path"]
+        para_grad_fine_tune = output_fine_tune["para_grad_path"]
         para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
         var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
         num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
@@ -348,7 +348,8 @@ def main():
         # calculate doubly-robust estimator of ate: outcome variable is continuous; scaling back is needed
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
-            for y, treat, x in test_data:
+            for y, treat, x in val_data:
+                y = torch.FloatTensor(np.array(y_scalar.inverse_transform(y.cpu()))).to(device)
                 pred, prop_score = net.forward(x, treat)
                 # if run on gpu, need to convert pred and counter_fact to cpu, then convert it to numpy array
                 pred = torch.FloatTensor(np.array(y_scalar.inverse_transform(pred.cpu()))).to(device)
@@ -357,9 +358,9 @@ def main():
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
                 pred_resid = torch.flatten(y - pred)
-                ate_db = torch.mean(outcome_contrast + prop_contrast * pred_resid)
+                ate_db += torch.sum(outcome_contrast + prop_contrast * pred_resid)
 
-            ate_list[prune_seed] = ate_db
+            ate_list[prune_seed] = ate_db/len(val_set)
 
         # # NEED TO IMPLEMENT THE ESTIMATION OF CATE
         # test_indices = test_set.indices
