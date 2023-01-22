@@ -1,5 +1,5 @@
 from scipy.stats import truncnorm, bernoulli
-from torch.utils.data import Dataset, random_split
+from torch.utils.data import Dataset, random_split, ConcatDataset
 from sklearn.preprocessing import RobustScaler
 import numpy as np
 import pandas as pd
@@ -7,40 +7,41 @@ import torch
 import os
 
 
-def data_preprocess(data, partition_seed):
+def data_preprocess(data, partition_seed, cross_fit_no, scale=True):
     """
-    scale the input variables and the outcome variable to [0,1]
     data: Dataset object
         map-style dataset (only map-style dataset has __len__() property)
     partition_seed: int
-        seed to randomly partition the dataset into train set, validation set, and test set
+        seed to randomly partition the dataset into train set and validation set
+    cross_fit_no: int
+        the data subset that is going to be used as train set; note that we use three-fold cross fitting.
+    scale: bool
+        whether the input and the output will be scaled
     """
     data_size = data.__len__()
-    train_size = int(data_size * 0.6)
-    val_size = int(data_size * 0.2)
-    test_size = int(data_size * 0.2)
-    train_set, val_set, test_set = random_split(data, [train_size, val_size, test_size],
+    size = int(data_size/3)
+    cross_fit_set = random_split(data, [size, size, data_size-2*size],
                                                 generator=torch.Generator().manual_seed(partition_seed))
+    train_set = cross_fit_set.pop(cross_fit_no-1)
+    val_set = ConcatDataset(cross_fit_set)
 
     train_indices = train_set.indices
-    val_indices = val_set.indices
-    test_indices = test_set.indices
+    val_indices = cross_fit_set[0].indices + cross_fit_set[1].indices
 
-    x_scalar = RobustScaler()
-    x_scalar.fit(data.num_var[train_indices])
+    if scale:
+        x_scalar = RobustScaler()
+        x_scalar.fit(data.num_var[train_indices])
+        data.num_var[train_indices] = np.array(x_scalar.transform(data.num_var[train_indices]))
+        data.num_var[val_indices] = np.array(x_scalar.transform(data.num_var[val_indices]))
 
-    data.num_var[train_indices] = np.array(x_scalar.transform(data.num_var[train_indices]))
-    data.num_var[val_indices] = np.array(x_scalar.transform(data.num_var[val_indices]))
-    data.num_var[test_indices] = np.array(x_scalar.transform(data.num_var[test_indices]))
+        y_scalar = RobustScaler()
+        y_scalar.fit(data.y[train_indices])
+        data.y[train_indices] = np.array(y_scalar.transform(data.y[train_indices]))
+        data.y[val_indices] = np.array(y_scalar.transform(data.y[val_indices]))
 
-    y_scalar = RobustScaler()
-    y_scalar.fit(data.y[train_indices])
-
-    data.y[train_indices] = np.array(y_scalar.transform(data.y[train_indices]))
-    data.y[val_indices] = np.array(y_scalar.transform(data.y[val_indices]))
-    data.y[test_indices] = np.array(y_scalar.transform(data.y[test_indices]))
-
-    return train_set, val_set, test_set, x_scalar, y_scalar
+        return train_set, val_set, x_scalar, y_scalar
+    else:
+        return train_set, val_set
 
 
 # Simulation Dataset
@@ -332,6 +333,10 @@ class PensionData(Dataset):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         data = pd.read_csv("./raw_data/401k/401k.csv")
+        ####################################################
+        # drop_ind = data.loc[data['net_tfa'] >= 0.5e6].index
+        # data = data.drop(drop_ind)
+        #####################################################
         cat_col = ['db', 'marr', 'male', 'twoearn', 'pira', 'nohs', 'hs', 'smcol', 'col', 'hown']
         self.data_size = len(data.index)
 
@@ -365,7 +370,8 @@ class TwinsData(Dataset):
 
         self.y = torch.FloatTensor(np.array(data['y'])).long().to(device)
         self.treat = torch.FloatTensor(np.array(data['treat'], dtype=np.float32)).to(device)
-        self.x = torch.FloatTensor(np.array(data.loc[:, ~data.columns.isin(['y', 'treat'])], dtype=np.float32)).to(device)
+        self.counter = torch.FloatTensor(np.array(data['counter'], dtype=np.float32)).to(device)
+        self.x = torch.FloatTensor(np.array(data.loc[:, ~data.columns.isin(['y', 'treat', 'counter'])], dtype=np.float32)).to(device)
 
     def __len__(self):
         return int(self.data_size)
