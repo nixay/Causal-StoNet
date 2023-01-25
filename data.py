@@ -22,11 +22,11 @@ def data_preprocess(data, partition_seed, cross_fit_no, scale=True):
     size = int(data_size/3)
     cross_fit_set = random_split(data, [size, size, data_size-2*size],
                                                 generator=torch.Generator().manual_seed(partition_seed))
-    train_set = cross_fit_set.pop(cross_fit_no-1)
-    val_set = ConcatDataset(cross_fit_set)
+    val_set = cross_fit_set.pop(cross_fit_no-1)
+    train_set = ConcatDataset(cross_fit_set)
 
-    train_indices = train_set.indices
-    val_indices = cross_fit_set[0].indices + cross_fit_set[1].indices
+    val_indices = val_set.indices
+    train_indices = cross_fit_set[0].indices + cross_fit_set[1].indices
 
     if scale:
         x_scalar = RobustScaler()
