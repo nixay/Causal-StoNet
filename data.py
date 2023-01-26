@@ -254,8 +254,9 @@ class acic_data_homo(Dataset):
         # extract column names for categorical variables
         cat_col = []
         for col in data.columns:
-            if len(data[col].unique()) <= data[col].max() + 1:
-                cat_col.append(col)
+            if data[col].abs().max() <= 10:
+                if len(data[col].unique()) <= data[col].max() + 1:
+                    cat_col.append(col)
         cat_col = cat_col[1:]
 
         self.y = np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)
@@ -299,8 +300,9 @@ class acic_data_hete(Dataset):
         # for some extracted columns, the values don't seem to be encoding of categorical variables
         cat_col = []
         for col in data.columns:
-            if len(data[col].unique()) == data[col].max() + 1:
-                cat_col.append(col)
+            if data[col].abs().max() <= 10:
+                if len(data[col].unique()) <= data[col].max() + 1:
+                    cat_col.append(col)
         cat_col = cat_col[1:]
 
         self.ate = torch.FloatTensor(np.array(data['ATE'], dtype=np.float32)).to(self.device)
