@@ -236,19 +236,10 @@ class acic_data_homo(Dataset):
     def __init__(self, dgp):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # extract csv file names under the specified dgp
-        file_names_temp = pd.read_excel('./raw_data/acic/DatasetsCorrespondence.xlsx', header=None)
-        file_index = file_names_temp[0].str.contains("CHDScenario"+str(dgp)+"DS", case=True, regex=False)
-        file_names_list = list(file_names_temp[1][file_index][:25])
+        csv_name = 'acic_homo' + str(dgp) + '.csv'
+        csv_dir = os.path.join('./raw_data/acic', csv_name)
+        data = pd.read_csv(csv_dir)
 
-        # read and concatenate the csv files
-        data = []
-        root_dir = './raw_data/acic/data_subset'
-        for file_name in file_names_list:
-            dir = os.path.join(root_dir, file_name + ".CSV")
-            file = pd.read_csv(dir)
-            data.append(file)
-        data = pd.concat(data, ignore_index=True)
         self.data_size = len(data.index)
 
         # extract column names for categorical variables
