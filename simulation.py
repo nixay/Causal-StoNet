@@ -32,7 +32,7 @@ parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nar
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
-parser.add_argument('--treat_loss_scalar', default=2e3, type=float, help='multiplier to scale the treatment loss')
+parser.add_argument('--treat_loss_scalar', default=500, type=float, help='multiplier to scale the treatment loss')
 parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
 parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
@@ -45,7 +45,6 @@ parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum we
 parser.add_argument('--para_lr_train', default=[1e-3, 1e-5, 1e-7, 1e-12], type=float, nargs='+',
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
-parser.add_argument('--temperature', default=2, type=float, help="temperature parameter for SGHMC")
 parser.add_argument('--para_lr_decay', default=1.2, type=float, help='decay factor for para_lr')
 parser.add_argument('--impute_lr_decay', default=0.8, type=float, help='decay factor for impute_lr')
 
@@ -180,7 +179,7 @@ def main():
                                             momentum=para_momentum, maximize=True))
 
         optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
-                          mh_step=mh_step, sigma_list=sigma_list, temperature=args.temperature, prior_sigma_0=prior_sigma_0,
+                          mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
                           impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
                           treat_loss_scalar=treat_loss_scalar)
