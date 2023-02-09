@@ -287,7 +287,7 @@ def main():
         output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
                                     impute_lrs=impute_lrs_fine_tune, **optim_args)
         para_fine_tune = output_fine_tune["para_path"]
-        para_grad_fine_tune = output_train["para_grad_path"]
+        para_grad_fine_tune = output_fine_tune["para_grad_path"]
         para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
         var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
         num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
@@ -365,7 +365,7 @@ def main():
                 pred_resid = torch.flatten(y - pred)
                 ate_db += torch.sum(outcome_contrast + prop_contrast * pred_resid)
 
-            ate_list[prune_seed] = ate_db/len(val_data)
+            ate_list[prune_seed] = ate_db/len(val_set)
 
         torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
 
