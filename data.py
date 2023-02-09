@@ -74,14 +74,14 @@ class SimData_Causal(Dataset):
             x_temp /= np.sqrt(2)
 
             # nodes in the first hidden layer
-            h11 = np.tanh(2*x_temp[0]-4*x_temp[3])
-            h12 = np.tanh(-4*x_temp[0]+2*x_temp[4])
-            h13 = np.tanh(4*x_temp[1]+3*x_temp[2])
-            h14 = np.tanh(x_temp[3]-3*x_temp[4])
+            h11 = np.tanh(2*x_temp[0]+1*x_temp[3])
+            h12 = np.tanh(-x_temp[0]-2*x_temp[4])
+            h13 = np.tanh(2*x_temp[1]-2*x_temp[2])
+            h14 = np.tanh(-2*x_temp[3]+1*x_temp[4])
 
             # nodes in the second hidden layer
-            h21 = np.tanh(-4*h11+h13)
-            h22 = np.tanh(h12-h13)
+            h21 = np.tanh(-2*h11+h13)
+            h22 = h12-h13
             h23 = np.tanh(h13-2*h14)
 
             # generate treatment
@@ -89,18 +89,18 @@ class SimData_Causal(Dataset):
             treat_temp = bernoulli.rvs(p=prob)
 
             # nodes in the third hidden layer
-            h31 = np.tanh(3*h21-4*treat_temp)
-            h32 = np.tanh(2*treat_temp-h23)
+            h31 = np.tanh(1*h21-2*treat_temp)
+            h32 = np.tanh(-1*treat_temp+2*h23)
 
             # counterfactual nodes in the third hidden layer
-            h31_count = np.tanh(3*h21-4*(1-treat_temp))
-            h32_count = np.tanh(2*(1-treat_temp)-h23)
+            h31_count = np.tanh(1*h21-2*(1-treat_temp))
+            h32_count = np.tanh(-1*(1-treat_temp)+2*h23)
 
             # generate outcome variable
-            y_temp = np.tanh(-3*h31+4*h32) + np.random.normal(0, 1)
+            y_temp = -4*h31+2*h32 + np.random.normal(0, 1)
 
             # generate counterfactual outcome variable
-            y_count_temp = np.tanh(-3*h31_count+4*h32_count) + np.random.normal(0, 1)
+            y_count_temp = -4*h31_count+2*h32_count + np.random.normal(0, 1)
 
             if treat_temp == 1:
                 one_count += 1
@@ -163,33 +163,33 @@ class SimData_Causal_Ind(Dataset):
             x_temp = truncnorm.rvs(-10, 10, size=input_size)
 
             # nodes in the first hidden layer
-            h11 = np.tanh(2*x_temp[0]-4*x_temp[2])
-            h12 = np.tanh(-4*x_temp[1]+2*x_temp[3])
-            h13 = np.tanh(4*x_temp[3]+3*x_temp[1])
-            h14 = np.tanh(x_temp[2]-3*x_temp[4])
+            h11 = np.tanh(2*x_temp[0]+1*x_temp[3])
+            h12 = np.tanh(-x_temp[0]-2*x_temp[4])
+            h13 = np.tanh(2*x_temp[1]-2*x_temp[2])
+            h14 = np.tanh(-2*x_temp[3]+1*x_temp[4])
 
             # nodes in the second hidden layer
-            h21 = np.tanh(-4*h11+h14)
-            h22 = np.tanh(h12-h13)
-            h23 = np.tanh(h11-2*h14)
+            h21 = np.tanh(-2*h11+h13)
+            h22 = h12-h13
+            h23 = np.tanh(h13-2*h14)
 
             # generate treatment
             prob = np.exp(h22)/(1 + np.exp(h22))
             treat_temp = bernoulli.rvs(p=prob)
 
             # nodes in the third hidden layer
-            h31 = np.tanh(3*h21-4*treat_temp)
-            h32 = np.tanh(2*treat_temp-h23)
+            h31 = np.tanh(1*h21-2*treat_temp)
+            h32 = np.tanh(-1*treat_temp+2*h23)
 
             # counterfactual nodes in the third hidden layer
-            h31_count = np.tanh(3*h21-4*(1-treat_temp))
-            h32_count = np.tanh(2*(1-treat_temp)-h23)
+            h31_count = np.tanh(1*h21-2*(1-treat_temp))
+            h32_count = np.tanh(-1*(1-treat_temp)+2*h23)
 
             # generate outcome variable
-            y_temp = np.tanh(-3*h31+4*h32) + np.random.normal(0, 1)
+            y_temp = -4*h31+2*h32 + np.random.normal(0, 1)
 
             # generate counterfactual outcome variable
-            y_count_temp = np.tanh(-3*h31_count+4*h32_count) + np.random.normal(0, 1)
+            y_count_temp = -4*h31_count+2*h32_count + np.random.normal(0, 1)
 
             if treat_temp == 1:
                 one_count += 1
@@ -287,8 +287,6 @@ class acic_data_hete(Dataset):
         self.data_size = len(data.index)
 
         # extract column names for categorical variables
-        # note that for this dataset, the extracted cat_cols may not be real categorical variables
-        # for some extracted columns, the values don't seem to be encoding of categorical variables
         cat_col = []
         for col in data.columns:
             if data[col].abs().max() <= 10:
