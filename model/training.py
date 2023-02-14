@@ -175,7 +175,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 # gradient clipping on hidden layers
                 if layer_index < net.num_hidden + 1:
                     torch.nn.utils.clip_grad_norm_(net.module_list[layer_index].parameters(),
-                                               max_norm=1/sigma_list[layer_index], norm_type=2)
+                                               max_norm=1/(2*sigma_list[layer_index]), norm_type=2)
                 optimizer.step()
 
                 if epoch == epochs-1:
