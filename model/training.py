@@ -261,9 +261,9 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
 
         if mode == "train":
             # select input variable
-            var_ind_out = para_gamma_path[str(epoch)]['0.weight']
+            var_ind_out = np.identity(len(para_gamma_path[str(epoch)]['0.weight'][0]), dtype=bool)
             for i, (name, para) in enumerate(net.named_parameters()):
-                if i % 2 == 0 and i > 0:
+                if i % 2 == 0:
                     var_ind_out = np.matmul(para_gamma_path[str(epoch)][name], var_ind_out)
                     if i/2 == net.treat_layer:
                         var_ind_treat = np.copy(var_ind_out[net.treat_node, :])
