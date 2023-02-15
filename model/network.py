@@ -51,10 +51,9 @@ class StoNet_Causal(nn.Module):
             for name, para in self.named_parameters():
                 para.data[self.mask[name]] = 0
 
-        x = self.module_list[0](x)
-        for layer_index in range(self.num_hidden):
-            x = self.module_list[layer_index + 1](x)
-            if layer_index + 1 == self.treat_layer:
+        for layer_index in range(self.num_hidden+1):
+            x = self.module_list[layer_index](x)
+            if layer_index == self.treat_layer:
                 score = torch.clone(x[:, self.treat_node])
                 ps = torch.sigmoid(score)  # propensity score
                 x[:, self.treat_node] = treat
