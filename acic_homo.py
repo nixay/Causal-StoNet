@@ -156,11 +156,19 @@ def main():
         net.to(device)
 
         # define optimizer
-        optimizer_list_train = []
+        optimizer_list_train1 = []
         for i in range(net.num_hidden + 1):
             # set maximize = True to do gradient ascent
-            optimizer_list_train.append(SGD(net.module_list[i].parameters(), lr=para_lrs_train[i],
+            optimizer_list_train1.append(SGD(net.module_list[i].parameters(), lr=para_lrs_train[i],
                                             momentum=para_momentum, maximize=True))
+
+        optimizer_list_train2 = []
+        for l in range(net.num_hidden + 1):
+            for k in range(training_epochs):
+                para_lrs_train_temp = para_lrs_train[l]/(1+para_lrs_train[l]*k**para_lr_decay)
+            # set maximize = True to do gradient ascent
+            optimizer_list_train2.append(SGD(net.module_list[l].parameters(), lr=para_lrs_train_temp/2,
+                                             momentum=para_momentum, maximize=True))
 
         optimizer_list_fine_tune = []
         for j in range(net.num_hidden + 1):
@@ -177,36 +185,56 @@ def main():
 
         # pretrain
         print("Pretrain")
-        output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
+        output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train1,
                                    impute_lrs=impute_lrs, **optim_args)
         para_pretrain = output_pretrain["para_path"]
-        para_grad_pretrain = output_pretrain["para_grad_path"]
-        para_gamma_pretrain = output_pretrain["para_gamma_path"]
         performance_pretrain = output_pretrain["performance"]
-
-        para_gamma_file = open(os.path.join(PATH, 'para_gamma_pretrain.json'), "w")
-        json.dump(para_gamma_pretrain, para_gamma_file, indent="")
-        para_gamma_file.close()
 
         para_file = open(os.path.join(PATH, 'para_pretrain.json'), "w")
         json.dump(para_pretrain, para_file, indent="")
         para_file.close()
-
-        para_grad_file = open(os.path.join(PATH, 'para_grad_pretrain.json'), "w")
-        json.dump(para_grad_pretrain, para_grad_file, indent="")
-        para_grad_file.close()
 
         performance_file = open(os.path.join(PATH, 'performance_pretrain.json'), "w")
         json.dump(performance_pretrain, performance_file, indent="")
         performance_file.close()
 
         # train
-        print("Train")
-        output_train = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train,
+        print("Train 1")
+        output_train1 = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train1,
                                 impute_lrs=impute_lrs, **optim_args)
+        para_train1 = output_train1["para_path"]
+        num_gamma_out_train1 = output_train1["input_gamma_path"]["num_selected_out"]
+        num_gamma_treat_train1 = output_train1["input_gamma_path"]["num_selected_treat"]
+        performance_train1 = output_train1["performance"]
+        impute_lrs_train2 = output_train1["impute_lrs"]
+
+        # prune network parameters
+        with torch.no_grad():
+            for name, para in net.named_parameters():
+                para.data = torch.FloatTensor(para_train1[str(training_epochs-1)][name]).to(device)
+
+        user_mask = {}
+        for name, para in net.named_parameters():
+            user_mask[name] = para.abs() < threshold
+        net.set_prune(user_mask)
+
+        # save training result
+        performance_file = open(os.path.join(PATH, 'performance_train1.json'), "w")
+        json.dump(performance_train1, performance_file, indent="")
+        performance_file.close()
+
+        num_gamma_file = open(os.path.join(PATH, 'num_selected_out_train1.json'), "w")
+        json.dump(num_gamma_out_train1, num_gamma_file, indent="")
+        num_gamma_file.close()
+
+        num_gamma_file = open(os.path.join(PATH, 'num_selected_treat_train1.json'), "w")
+        json.dump(num_gamma_treat_train1, num_gamma_file, indent="")
+        num_gamma_file.close()
+
+        print("Train 2")
+        output_train = training(mode="train", net=net, epochs=training_epochs*2, optimizer_list=optimizer_list_train2,
+                                impute_lrs=impute_lrs_train2, **optim_args)
         para_train = output_train["para_path"]
-        para_grad_train = output_train["para_grad_path"]
-        para_gamma_train = output_train["para_gamma_path"]
         var_gamma_out_train = output_train["input_gamma_path"]["var_selected_out"]
         num_gamma_out_train = output_train["input_gamma_path"]["num_selected_out"]
         var_gamma_treat_train = output_train["input_gamma_path"]["var_selected_treat"]
@@ -217,7 +245,7 @@ def main():
         # prune network parameters
         with torch.no_grad():
             for name, para in net.named_parameters():
-                para.data = torch.FloatTensor(para_train[str(training_epochs-1)][name]).to(device)
+                para.data = torch.FloatTensor(para_train[str(training_epochs*2-1)][name]).to(device)
 
         user_mask = {}
         for name, para in net.named_parameters():
@@ -225,34 +253,26 @@ def main():
         net.set_prune(user_mask)
 
         # save model training results
-        num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs-1]
-        num_selection_treat_list[prune_seed] = num_gamma_treat_train[training_epochs-1]
+        num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs*2-1]
+        num_selection_treat_list[prune_seed] = num_gamma_treat_train[training_epochs*2-1]
 
-        temp_str = [str(int(x)) for x in var_gamma_out_train[str(training_epochs-1)]]
+        temp_str = [str(int(x)) for x in var_gamma_out_train[str(training_epochs*2-1)]]
         temp_str = ' '.join(temp_str)
         filename = PATH + 'selected_variable_out.txt'
         f = open(filename, 'w')
         f.write(temp_str)
         f.close()
 
-        temp_str = [str(int(x)) for x in var_gamma_treat_train[str(training_epochs-1)]]
+        temp_str = [str(int(x)) for x in var_gamma_treat_train[str(training_epochs*2-1)]]
         temp_str = ' '.join(temp_str)
         filename = PATH + 'selected_variable_treat.txt'
         f = open(filename, 'w')
         f.write(temp_str)
         f.close()
 
-        para_gamma_file = open(os.path.join(PATH, 'para_gamma_train.json'), "w")
-        json.dump(para_gamma_train, para_gamma_file, indent="")
-        para_gamma_file.close()
-
         para_file = open(os.path.join(PATH, 'para_train.json'), "w")
         json.dump(para_train, para_file, indent="")
         para_file.close()
-
-        para_grad_file = open(os.path.join(PATH, 'para_grad_train.json'), "w")
-        json.dump(para_grad_train, para_grad_file, indent="")
-        para_grad_file.close()
 
         performance_file = open(os.path.join(PATH, 'performance_train.json'), "w")
         json.dump(performance_train, performance_file, indent="")
@@ -279,8 +299,6 @@ def main():
         output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
                                     impute_lrs=impute_lrs_fine_tune, **optim_args)
         para_fine_tune = output_fine_tune["para_path"]
-        para_grad_fine_tune = output_fine_tune["para_grad_path"]
-        para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
         var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
         num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
         var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
@@ -289,17 +307,9 @@ def main():
         likelihoods = output_fine_tune["likelihoods"]
 
         # save refining results
-        para_gamma_file = open(os.path.join(PATH, 'para_gamma_fine_tune.json'), "w")
-        json.dump(para_gamma_fine_tune, para_gamma_file, indent="")
-        para_gamma_file.close()
-
         para_file = open(os.path.join(PATH, 'para_fine_tune.json'), "w")
         json.dump(para_fine_tune, para_file, indent="")
         para_file.close()
-
-        para_grad_file = open(os.path.join(PATH, 'para_grad_fine_tune.json'), "w")
-        json.dump(para_grad_fine_tune, para_grad_file, indent="")
-        para_grad_file.close()
 
         performance_file = open(os.path.join(PATH, 'performance_fine_tune.json'), "w")
         json.dump(performance_fine_tune, performance_file, indent="")
