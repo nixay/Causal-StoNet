@@ -7,7 +7,7 @@ import torch
 import os
 
 
-def data_preprocess(data, partition_seed, cross_fit_no, scale=True):
+def data_preprocess(data, partition_seed, cross_fit_no, cross_val=3, scale=True):
     """
     data: Dataset object
         map-style dataset (only map-style dataset has __len__() property)
@@ -15,18 +15,21 @@ def data_preprocess(data, partition_seed, cross_fit_no, scale=True):
         seed to randomly partition the dataset into train set and validation set
     cross_fit_no: int
         the data subset that is going to be used as train set; note that we use three-fold cross fitting.
+    cross_val: int
+        the number of cross-validation folds
     scale: bool
         whether the input and the output will be scaled
     """
     data_size = data.__len__()
-    size = int(data_size/3)
-    cross_fit_set = random_split(data, [size, size, data_size-2*size],
-                                                generator=torch.Generator().manual_seed(partition_seed))
+    size = int(data_size/cross_val)
+    size_list = [size for i in range(cross_val-1)]
+    size_list.append(data_size-(cross_val-1)*size)
+    cross_fit_set = random_split(data, size_list, generator=torch.Generator().manual_seed(partition_seed))
     val_set = cross_fit_set.pop(cross_fit_no-1)
     train_set = ConcatDataset(cross_fit_set)
 
     val_indices = val_set.indices
-    train_indices = cross_fit_set[0].indices + cross_fit_set[1].indices
+    train_indices = list(np.concatenate([cross_fit_set[i].indices for i in range(cross_val-1)]).flat)
 
     if scale:
         x_scalar = RobustScaler()
