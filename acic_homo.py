@@ -22,37 +22,37 @@ parser.add_argument('--cross_fit_no', default=1, type=int, help='the indicator f
 
 # Parameter for StoNet
 # model
-parser.add_argument('--layer', default=3, type=int, help='number of hidden layer (not including the treatment layer')
-parser.add_argument('--unit', default=[6, 4, 3], type=int, nargs='+', help='number of hidden unit in each layer')
-parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nargs='+',
+parser.add_argument('--layer', default=2, type=int, help='number of hidden layer (not including the treatment layer')
+parser.add_argument('--unit', default=[64, 32], type=int, nargs='+', help='number of hidden unit in each layer')
+parser.add_argument('--sigma', default=[1e-5, 1e-7, 1e-9], type=float, nargs='+',
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
-parser.add_argument('--treat_loss_scalar', default=1e3, type=float, help='multiplier to scale the treatment loss')
+parser.add_argument('--treat_loss_scalar', default=2000, type=float, help='multiplier to scale the treatment loss')
 parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
 parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
 # training setting
 parser.add_argument('--pretrain_epoch', default=100, type=int, help='total number of pretraining epochs')
-parser.add_argument('--train_epoch', default=1500, type=int, help='total number of training epochs')
+parser.add_argument('--train_epoch', default=500, type=int, help='total number of training epochs')
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
-parser.add_argument('--impute_lr', default=[3e-3, 3e-4, 1e-6], type=float, nargs='+', help='step size for SGHMC')
+parser.add_argument('--impute_lr', default=[3e-4, 1e-6], type=float, nargs='+', help='step size for SGHMC')
 parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum weight for SGHMC')
-parser.add_argument('--para_lr_train', default=[3e-3, 3e-5, 3e-7, 3e-12], type=float, nargs='+',
+parser.add_argument('--para_lr_train', default=[5e-6, 5e-8, 5e-13], type=float, nargs='+',
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
-parser.add_argument('--para_lr_decay', default=0.8, type=float, help='decay factor for para_lr')
-parser.add_argument('--impute_lr_decay', default=0.8, type=float, help='decay factor for impute_lr')
+parser.add_argument('--para_lr_decay', default=2, type=float, help='decay factor for para_lr')
+parser.add_argument('--impute_lr_decay', default=1, type=float, help='decay factor for impute_lr')
 
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
-parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
-parser.add_argument('--para_lr_fine_tune', default=[3e-4, 3e-6, 3e-8, 3e-13], type=float, nargs='+',
+parser.add_argument('--fine_tune_epoch', default=500, type=int, help='total number of fine tuning epochs')
+parser.add_argument('--para_lr_fine_tune', default=[5e-7, 1e-8, 1e-13], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
 # prior setting
-parser.add_argument('--sigma0', default=2e-5, type=float, help='sigma_0^2 in prior')
-parser.add_argument('--sigma1', default=1e-2, type=float, help='sigma_1^2 in prior')
-parser.add_argument('--lambda_n', default=1e-4, type=float, help='lambda_n in prior')
+parser.add_argument('--sigma0', default=1e-4, type=float, help='sigma_0^2 in prior')
+parser.add_argument('--sigma1', default=1e-1, type=float, help='sigma_1^2 in prior')
+parser.add_argument('--lambda_n', default=1e-6, type=float, help='lambda_n in prior')
 
 args = parser.parse_args()
 
