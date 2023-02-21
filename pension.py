@@ -17,6 +17,7 @@ parser = argparse.ArgumentParser(description='Run Causal StoNet for 401k data')
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
+parser.add_argument('--cross_val_fold', default=3, type=int, help = 'k-fold cross validation')
 parser.add_argument('--cross_fit_no', default=1, type=int, help='the indicator for training set in three-fold cross-fitting')
 
 # Parameter for StoNet
@@ -65,7 +66,7 @@ def main():
     # dataset setting
     data = PensionData()
     cross_fit_no = args.cross_fit_no
-    train_set, val_set, x_scalar, y_scalar = data_preprocess(data, args.partition_seed, cross_fit_no)
+    train_set, val_set, x_scalar, y_scalar = data_preprocess(data, args.partition_seed, cross_fit_no, args.cross_val_fold)
     y_scale = float(y_scalar.scale_)
 
     # load training data and validation data
