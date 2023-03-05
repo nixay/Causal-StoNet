@@ -38,16 +38,16 @@ parser.add_argument('--train_epoch', default=2500, type=int, help='total number 
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
 parser.add_argument('--impute_lr', default=[1e-2, 3e-3, 3e-5], type=float, nargs='+', help='step size for SGHMC')
 parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum weight for SGHMC')
-parser.add_argument('--para_lr_train', default=[5e-4, 1e-4, 5e-6, 1e-09], type=float, nargs='+',
+parser.add_argument('--para_lr_train', default=[1e-4, 5e-5, 5e-6, 1e-09], type=float, nargs='+',
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
 parser.add_argument('--para_lr_decay', default=1.2, type=float, help='decay factor for para_lr')
-parser.add_argument('--impute_lr_decay', default=1, type=float, help='decay factor for impute_lr')
+parser.add_argument('--impute_lr_decay', default=1.2, type=float, help='decay factor for impute_lr')
 
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
-parser.add_argument('--para_lr_fine_tune', default=[5e-5, 1e-5, 5e-7, 1e-10], type=float, nargs='+',
+parser.add_argument('--para_lr_fine_tune', default=[1e-5, 5e-6, 5e-7, 1e-10], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
 # prior setting
 parser.add_argument('--sigma0', default=5e-4, type=float, help='sigma_0^2 in prior')
