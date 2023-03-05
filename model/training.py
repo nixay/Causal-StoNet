@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
              sigma_list, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
-             impute_lr_decay, treat_loss_scalar, scalar_y=1, outcome_cat=False):
+             impute_lr_decay, temperature, scalar_y=1, outcome_cat=False):
 
     """
     train the network
@@ -46,8 +46,8 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         the type of outcome variable
         if TRUE, the outcome variable is a categorical variable, and this is a regression task
         if False, the outcome variable is a numerical variable, and this is a classification task
-    treat_loss_scalar:
-        adjust the scale of treatment loss (to make sure that the signal from treatment is strong enough)
+    temperature:
+        temperature scaling for treatment model
 
 
     output:
@@ -153,7 +153,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         for y, treat, x in train_data:
             # backward imputation
             hidden_list = net.backward_imputation(mh_step, step_impute_lrs, alpha, out_loss_sum, sigma_list, x,
-                                                  treat, y, treat_loss_scalar)
+                                                  treat, y, temperature)
 
             # parameter update
             for para in net.parameters():
@@ -169,7 +169,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
             for layer_index in range(net.num_hidden + 1):
                 forward_hidden = net.module_list[0](x)
                 likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
-                                            treat_loss_scalar)/batch_size
+                                            temperature) / batch_size
                 optimizer = optimizer_list[layer_index]
                 likelihood.backward()
                 # gradient clipping on hidden layers
@@ -184,16 +184,16 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                         # make sure that treat loss have the same weight as outcome loss
                         forward_hidden = net.module_list[0](x)
                         likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
-                                                    treat_loss_scalar=1/(2 * sigma_list[-1]))
+                                                    temperature)
                         hidden_likelihood[layer_index] += likelihood
 
         # calculate training performance
         out_train_loss, out_train_correct, treat_train_loss, treat_train_correct = 0, 0, 0, 0
         with torch.no_grad():
             for y, treat, x in train_data:
-                pred, ps = net.forward(x, treat)
+                pred, ps = net.forward(x, treat, temperature)
                 out_train_loss += out_loss(pred, y).item()
-                treat_train_loss += treat_loss(ps, treat).item()
+                treat_train_loss += treat_loss(ps, treat).item()  # note that for BCELoss the input has to be probability
                 treat_train_correct += ((ps > 0.5) == treat).sum().item()
                 if outcome_cat:
                     out_train_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
@@ -219,7 +219,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         out_val_loss, out_val_correct, treat_val_loss, treat_val_correct = 0, 0, 0, 0
         with torch.no_grad():
             for y, treat, x in val_data:
-                pred, ps = net.forward(x, treat)
+                pred, ps = net.forward(x, treat, temperature)
                 out_val_loss += out_loss(pred, y).item()
                 treat_val_loss += treat_loss(ps, treat).item()
                 treat_val_correct += ((ps > 0.5) == treat).sum().item()

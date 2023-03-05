@@ -23,36 +23,36 @@ parser.add_argument('--cross_fit_no', default=1, type=int, help='the indicator f
 # Parameter for StoNet
 # model
 parser.add_argument('--layer', default=3, type=int, help='number of hidden layer (not including the treatment layer')
-parser.add_argument('--unit', default=[6, 4, 3], type=int, nargs='+', help='number of hidden unit in each layer')
-parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nargs='+',
+parser.add_argument('--unit', default=[16, 8, 4], type=int, nargs='+', help='number of hidden unit in each layer')
+parser.add_argument('--sigma', default=[1e-3, 1e-4, 1e-5, 1e-6], type=float, nargs='+',
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
-parser.add_argument('--treat_loss_scalar', default=1e3, type=float, help='multiplier to scale the treatment loss')
+parser.add_argument('--temp_scaling', default=0.5, type=float, help='temperature scaling for treatmanet model')
 parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
 parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
 # training setting
 parser.add_argument('--pretrain_epoch', default=100, type=int, help='total number of pretraining epochs')
-parser.add_argument('--train_epoch', default=1500, type=int, help='total number of training epochs')
+parser.add_argument('--train_epoch', default=2500, type=int, help='total number of training epochs')
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
-parser.add_argument('--impute_lr', default=[3e-3, 3e-4, 1e-6], type=float, nargs='+', help='step size for SGHMC')
+parser.add_argument('--impute_lr', default=[1e-2, 3e-3, 3e-5], type=float, nargs='+', help='step size for SGHMC')
 parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum weight for SGHMC')
-parser.add_argument('--para_lr_train', default=[3e-3, 3e-5, 3e-7, 3e-12], type=float, nargs='+',
+parser.add_argument('--para_lr_train', default=[5e-4, 1e-4, 5e-6, 1e-09], type=float, nargs='+',
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
-parser.add_argument('--para_lr_decay', default=0.8, type=float, help='decay factor for para_lr')
-parser.add_argument('--impute_lr_decay', default=0.8, type=float, help='decay factor for impute_lr')
+parser.add_argument('--para_lr_decay', default=1.2, type=float, help='decay factor for para_lr')
+parser.add_argument('--impute_lr_decay', default=1, type=float, help='decay factor for impute_lr')
 
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
-parser.add_argument('--para_lr_fine_tune', default=[3e-4, 3e-6, 3e-8, 3e-13], type=float, nargs='+',
+parser.add_argument('--para_lr_fine_tune', default=[5e-5, 1e-5, 5e-7, 1e-10], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
 # prior setting
-parser.add_argument('--sigma0', default=2e-5, type=float, help='sigma_0^2 in prior')
-parser.add_argument('--sigma1', default=1e-2, type=float, help='sigma_1^2 in prior')
-parser.add_argument('--lambda_n', default=1e-4, type=float, help='lambda_n in prior')
+parser.add_argument('--sigma0', default=5e-4, type=float, help='sigma_0^2 in prior')
+parser.add_argument('--sigma1', default=1e-1, type=float, help='sigma_1^2 in prior')
+parser.add_argument('--lambda_n', default=1e-6, type=float, help='lambda_n in prior')
 
 args = parser.parse_args()
 
@@ -93,7 +93,7 @@ def main():
     fine_tune_epochs = args.fine_tune_epoch
     para_lr_decay = args.para_lr_decay
     impute_lr_decay = args.impute_lr_decay
-    treat_loss_scalar = args.treat_loss_scalar
+    temperature = args.temp_scaling
 
     # imputation parameters
     impute_lrs = args.impute_lr
@@ -127,7 +127,7 @@ def main():
 
     # path to save the result
     base_path = os.path.join('.', 'pension', 'result')
-    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)+ '_' + str(treat_loss_scalar)
+    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)+ '_' + str(temperature)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
@@ -172,7 +172,7 @@ def main():
                           mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, scalar_y=y_scale,
                           para_lr_decay=para_lr_decay, impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
-                          treat_loss_scalar=treat_loss_scalar)
+                          temperature=temperature)
 
         # pretrain
         print("Pretrain")
@@ -351,9 +351,9 @@ def main():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in val_data:
                 y = torch.FloatTensor(np.array(y_scalar.inverse_transform(y.cpu()))).to(device)
-                pred, prop_score = net.forward(x, treat)
+                pred, prop_score = net.forward(x, treat, temperature)
                 pred = torch.FloatTensor(np.array(y_scalar.inverse_transform(pred.cpu()))).to(device)
-                counter_fact, _ = net.forward(x, 1 - treat)
+                counter_fact, _ = net.forward(x, 1 - treat, temperature)
                 counter_fact = torch.FloatTensor(np.array(y_scalar.inverse_transform(counter_fact.cpu()))).to(device)
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
