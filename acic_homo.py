@@ -28,7 +28,7 @@ parser.add_argument('--sigma', default=[1e-5, 1e-7, 1e-9], type=float, nargs='+'
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
-parser.add_argument('--treat_loss_scalar', default=2000, type=float, help='multiplier to scale the treatment loss')
+parser.add_argument('--temp_scaling', default=2000, type=float, help='temperature scaling for treatmanet model')
 parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
 parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
@@ -94,7 +94,7 @@ def main():
     fine_tune_epochs = args.fine_tune_epoch
     para_lr_decay = args.para_lr_decay
     impute_lr_decay = args.impute_lr_decay
-    treat_loss_scalar = args.treat_loss_scalar
+    temperature = args.temp_scaling
 
     # imputation parameters
     impute_lrs = args.impute_lr
@@ -128,7 +128,7 @@ def main():
 
     # path to save the result
     base_path = os.path.join('.', 'acic_homo', 'result', str(dgp))
-    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(treat_loss_scalar)
+    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(temperature)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
@@ -181,7 +181,7 @@ def main():
                           mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, scalar_y=y_scale,
                           para_lr_decay=para_lr_decay, impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
-                          treat_loss_scalar=treat_loss_scalar)
+                          temperature=temperature)
 
         # pretrain
         print("Pretrain")
@@ -362,10 +362,9 @@ def main():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in val_data:
                 y = torch.FloatTensor(np.array(y_scalar.inverse_transform(y.cpu()))).to(device)
-                pred, prop_score = net.forward(x, treat)
-                # if run on gpu, need to convert pred and counter_fact to cpu, then convert it to numpy array
+                pred, prop_score = net.forward(x, treat, temperature)
                 pred = torch.FloatTensor(np.array(y_scalar.inverse_transform(pred.cpu()))).to(device)
-                counter_fact, _ = net.forward(x, 1 - treat)
+                counter_fact, _ = net.forward(x, 1 - treat, temperature)
                 counter_fact = torch.FloatTensor(np.array(y_scalar.inverse_transform(counter_fact.cpu()))).to(device)
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)

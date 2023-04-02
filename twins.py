@@ -17,6 +17,7 @@ parser = argparse.ArgumentParser(description='Run Causal StoNet for twins data')
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
+parser.add_argument('--cross_val_fold', default=3, type=int, help = 'k-fold cross validation')
 parser.add_argument('--cross_fit_no', default=1, type=int, help='the indicator for training set in three-fold cross-fitting')
 
 # Parameter for StoNet
@@ -27,7 +28,7 @@ parser.add_argument('--sigma', default=[1e-3, 1e-4, 1e-5, 1e-6], type=float, nar
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
-parser.add_argument('--treat_loss_scalar', default=200, type=float, help='multiplier to scale the treatment loss')
+parser.add_argument('--temp_scaling', default=200, type=float, help='multiplier to scale the treatment loss')
 parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
 parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
@@ -65,7 +66,7 @@ def main():
     # dataset setting
     data = TwinsData()
     cross_fit_no = args.cross_fit_no
-    train_set, val_set = data_preprocess(data, args.partition_seed, cross_fit_no, False)
+    train_set, val_set = data_preprocess(data, args.partition_seed, cross_fit_no, args.cross_val_fold, False)
 
     # load training data and validation data
     num_workers = args.num_workers
@@ -90,7 +91,7 @@ def main():
     fine_tune_epochs = args.fine_tune_epoch
     para_lr_decay = args.para_lr_decay
     impute_lr_decay = args.impute_lr_decay
-    treat_loss_scalar = args.treat_loss_scalar
+    temperature = args.temp_scaling
 
     # imputation parameters
     impute_lrs = args.impute_lr
@@ -124,7 +125,7 @@ def main():
 
     # path to save the result
     base_path = os.path.join('.', 'twins', 'result')
-    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)+ '_' + str(treat_loss_scalar)
+    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)+ '_' + str(temperature)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
@@ -169,7 +170,7 @@ def main():
                           mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
                           impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
-                          treat_loss_scalar=treat_loss_scalar)
+                          temperature=temperature)
 
         # pretrain
         print("Pretrain")
@@ -347,9 +348,9 @@ def main():
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in val_data:
-                pred_score, prop_score = net.forward(x, treat)
+                pred_score, prop_score = net.forward(x, treat, temperature)
                 pred_prob = m(pred_score)[:, 1]  # E[Y|X, A] = P(Y=1|X, A)
-                counter_fact_score, _ = net.forward(x, 1 - treat)
+                counter_fact_score, _ = net.forward(x, 1 - treat, temperature)
                 counter_fact_prob = m(counter_fact_score)[:, 1]
                 outcome_contrast = torch.flatten(pred_prob-counter_fact_prob) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)

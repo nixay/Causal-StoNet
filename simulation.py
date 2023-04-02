@@ -32,7 +32,7 @@ parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nar
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
-parser.add_argument('--treat_loss_scalar', default=500, type=float, help='multiplier to scale the treatment loss')
+parser.add_argument('--temp_scaling', default=1000, type=float, help='multiplier to scale the treatment loss')
 parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
 parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
@@ -42,16 +42,16 @@ parser.add_argument('--train_epoch', default=1500, type=int, help='total number 
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
 parser.add_argument('--impute_lr', default=[3e-3, 3e-4, 1e-6], type=float, nargs='+', help='step size for SGHMC')
 parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum weight for SGHMC')
-parser.add_argument('--para_lr_train', default=[1e-3, 1e-5, 1e-7, 1e-12], type=float, nargs='+',
+parser.add_argument('--para_lr_train', default=[3e-4, 3e-6, 3e-8, 1e-12], type=float, nargs='+',
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
 parser.add_argument('--para_lr_decay', default=1.2, type=float, help='decay factor for para_lr')
-parser.add_argument('--impute_lr_decay', default=0.8, type=float, help='decay factor for impute_lr')
+parser.add_argument('--impute_lr_decay', default=1, type=float, help='decay factor for impute_lr')
 
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
-parser.add_argument('--para_lr_fine_tune', default=[1e-4, 1e-6, 1e-8, 1e-13], type=float, nargs='+',
+parser.add_argument('--para_lr_fine_tune', default=[3e-5, 3e-7, 3e-9, 1e-13], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
 # prior setting
 parser.add_argument('--sigma0', default=1e-3, type=float, help='sigma_0^2 in prior')
@@ -105,7 +105,7 @@ def main():
     fine_tune_epochs = args.fine_tune_epoch
     para_lr_decay = args.para_lr_decay
     impute_lr_decay = args.impute_lr_decay
-    treat_loss_scalar = args.treat_loss_scalar
+    temperature = args.temp_scaling
 
     # imputation parameters
     impute_lrs = args.impute_lr
@@ -140,7 +140,7 @@ def main():
 
     # path to save the result
     base_path = os.path.join('.', 'simulation', 'result', data_name, str(data_seed))
-    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(treat_loss_scalar)
+    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(temperature)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
@@ -182,7 +182,7 @@ def main():
                           mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
                           impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
-                          treat_loss_scalar=treat_loss_scalar)
+                          temperature=temperature)
         # pretrain
         print("Pretrain")
         output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
@@ -358,8 +358,8 @@ def main():
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in val_data:
-                pred, prop_score = net.forward(x, treat)
-                counter_fact, _ = net.forward(x, 1 - treat)
+                pred, prop_score = net.forward(x, treat, temperature)
+                counter_fact, _ = net.forward(x, 1 - treat, temperature)
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
                 pred_resid = torch.flatten(y - pred)
