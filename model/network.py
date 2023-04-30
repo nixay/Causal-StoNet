@@ -55,7 +55,7 @@ class StoNet_Causal(nn.Module):
             x = self.module_list[layer_index](x)
             if layer_index == self.treat_layer:
                 logits = torch.clone(x[:, self.treat_node])
-                ps = torch.sigmoid(logits/temperature)  # propensity score
+                ps = torch.sigmoid(logits)  # propensity score
                 x[:, self.treat_node] = treat
         return x, ps
 
@@ -77,7 +77,7 @@ class StoNet_Causal(nn.Module):
 
             z_treat = z[:, self.treat_node]
             treat = hidden_list[layer_index][:, self.treat_node]
-            likelihood_treat = -self.treat_loss(z_treat/temperature, treat)
+            likelihood_treat = -self.treat_loss(z_treat, treat)*temperature
 
             z_rest_1 = z[:, 0:self.treat_node]
             temp1 = hidden_list[layer_index][:, 0:self.treat_node]
