@@ -66,7 +66,8 @@ def main():
     # dataset setting
     data = TwinsData()
     cross_fit_no = args.cross_fit_no
-    train_set, val_set = data_preprocess(data, args.partition_seed, cross_fit_no, args.cross_val_fold, False)
+    train_set, val_set, _, _ = data_preprocess(data, args.partition_seed, cross_fit_no,
+                                               args.cross_val_fold, x_scale=False, y_scale=False)
 
     # load training data and validation data
     num_workers = args.num_workers
