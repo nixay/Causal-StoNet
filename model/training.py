@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
              sigma_list, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
-             impute_lr_decay, temperature, scalar_y=1, outcome_cat=False):
+             impute_lr_decay, temperature, scalar_y=1, outcome_cat=False, CE_weight=False):
 
     """
     train the network
@@ -48,6 +48,9 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         if False, the outcome variable is a numerical variable, and this is a classification task
     temperature:
         temperature scaling for treatment model
+    CE_weight: None or torch tensor:
+        when the outcome variable is categorical, the weight assigned to each class.
+        can be used to deal with unbalanced dataset.
 
 
     output:
@@ -113,14 +116,19 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
 
     # settings for output loss functions
     if outcome_cat:
-        out_loss = nn.CrossEntropyLoss()
-        out_loss_sum = nn.CrossEntropyLoss(reduction='sum')
+        # calculate the weight for each class
+
+        out_loss = nn.CrossEntropyLoss(weight=CE_weight)
+        out_loss_sum = nn.CrossEntropyLoss(weight=CE_weight, reduction='sum')
     else:
         out_loss = nn.MSELoss()
         out_loss_sum = nn.MSELoss(reduction='sum')
 
     # treatment loss function
-    treat_loss = nn.BCELoss()
+    if isinstance(net.treat_node, (list, tuple, np.ndarray)):
+        treat_loss = nn.CrossEntropyLoss()
+    else:
+        treat_loss = nn.BCELoss()
 
     # intermediate values for prior gradient calculation
     c1 = np.log(lambda_n) - np.log(1 - lambda_n) + 0.5 * np.log(prior_sigma_0) - 0.5 * np.log(prior_sigma_1)
@@ -194,7 +202,10 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 pred, ps = net.forward(x, treat, temperature)
                 out_train_loss += out_loss(pred, y).item()
                 treat_train_loss += treat_loss(ps, treat).item()  # note that for BCELoss the input has to be probability
-                treat_train_correct += ((ps > 0.5) == treat).sum().item()
+                if isinstance(net.treat_node, (list, tuple, np.ndarray)):
+                    treat_train_correct += (ps.argmax(dim=1) == treat.argmax(dim=1)).sum().item()
+                else:
+                    treat_train_correct += ((ps > 0.5) == treat).sum().item()
                 if outcome_cat:
                     out_train_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
 
@@ -222,7 +233,10 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 pred, ps = net.forward(x, treat, temperature)
                 out_val_loss += out_loss(pred, y).item()
                 treat_val_loss += treat_loss(ps, treat).item()
-                treat_val_correct += ((ps > 0.5) == treat).sum().item()
+                if isinstance(net.treat_node, (list, tuple, np.ndarray)):
+                    treat_val_correct += (ps.argmax(dim=1) == treat.argmax(dim=1)).sum().item()
+                else:
+                    treat_val_correct += ((ps > 0.5) == treat).sum().item()
                 if outcome_cat:
                     out_val_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
 
@@ -269,6 +283,8 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                         var_ind_treat = np.copy(var_ind_out[net.treat_node, :])
                         var_ind_out[net.treat_node, :] = np.zeros_like(var_ind_out[net.treat_node, :])
             var_ind_out = np.max(var_ind_out, 0)
+            if isinstance(net.treat_node, (list, tuple, np.ndarray)):
+                var_ind_treat = np.prod(var_ind_treat, axis=0)
             num_selected_out = np.sum(var_ind_out)
             num_selected_treat = np.sum(var_ind_treat)
             input_gamma_path['var_selected_out'][str(epoch)] = var_ind_out.tolist()
