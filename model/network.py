@@ -17,8 +17,8 @@ class StoNet_Causal(nn.Module):
             dimension of network output
         treat_layer: int
             the layer with treatment variable
-        treat_node: int
-            the hidden node that the treatment variable is located at
+        treat_node: list of int
+            the hidden node that the treatment variables are located at
         """
         super(StoNet_Causal, self).__init__()
         self.num_hidden = num_hidden
@@ -42,11 +42,15 @@ class StoNet_Causal(nn.Module):
         self.mask = None
 
         self.sse = nn.MSELoss(reduction='sum')
-        self.treat_loss = nn.BCEWithLogitsLoss(reduction='sum')
+
+        if isinstance(self.treat_node, (list, tuple, np.ndarray)):
+            self.treat_loss = nn.CrossEntropyLoss(reduction='sum')
+        else:
+            self.treat_loss = nn.BCEWithLogitsLoss(reduction='sum')
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def forward(self, x, treat, temperature):
+    def forward(self, x, treat, temperature=1):
         if self.prune_flag == 1:
             for name, para in self.named_parameters():
                 para.data[self.mask[name]] = 0
@@ -55,7 +59,10 @@ class StoNet_Causal(nn.Module):
             x = self.module_list[layer_index](x)
             if layer_index == self.treat_layer:
                 logits = torch.clone(x[:, self.treat_node])
-                ps = torch.sigmoid(logits)  # propensity score
+                if isinstance(self.treat_node, (list, tuple, np.ndarray)):
+                    ps = torch.softmax(logits/temperature, dim=1)
+                else:
+                    ps = torch.sigmoid(logits/temperature)
                 x[:, self.treat_node] = treat
         return x, ps
 
@@ -67,7 +74,7 @@ class StoNet_Causal(nn.Module):
         self.prune_flag = 0
         self.mask = None
 
-    def likelihood(self, forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list, y, temperature):
+    def likelihood(self, forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list, y, temperature=1):
         if layer_index == 0:  # log_likelihood(Y_1|X)
             likelihood = -self.sse(forward_hidden, hidden_list[layer_index]) / (2 * sigma_list[
                 layer_index])
@@ -77,14 +84,21 @@ class StoNet_Causal(nn.Module):
 
             z_treat = z[:, self.treat_node]
             treat = hidden_list[layer_index][:, self.treat_node]
-            likelihood_treat = -self.treat_loss(z_treat, treat)*temperature
+            likelihood_treat = -self.treat_loss(z_treat/temperature, treat)
 
-            z_rest_1 = z[:, 0:self.treat_node]
-            temp1 = hidden_list[layer_index][:, 0:self.treat_node]
+            if isinstance(self.treat_node, (list, tuple, np.ndarray)):
+                lower = self.treat_node[0]
+                upper = self.treat_node[-1]
+            else:
+                lower = self.treat_node
+                upper = self.treat_node
+
+            z_rest_1 = z[:, 0:lower]
+            temp1 = hidden_list[layer_index][:, 0:lower]
             likelihood_rest_1 = -self.sse(z_rest_1, temp1)/(2 * sigma_list[layer_index])
 
-            z_rest_2 = z[:, self.treat_node + 1:]
-            temp2 = hidden_list[layer_index][:, self.treat_node + 1:]
+            z_rest_2 = z[:, upper + 1:]
+            temp2 = hidden_list[layer_index][:, upper + 1:]
             likelihood_rest_2 = -self.sse(z_rest_2, temp2)/(2 * sigma_list[layer_index])
 
             likelihood = likelihood_treat + likelihood_rest_1 + likelihood_rest_2
@@ -98,7 +112,7 @@ class StoNet_Causal(nn.Module):
                                    hidden_list[layer_index]) / (2 * sigma_list[layer_index])
         return likelihood
 
-    def backward_imputation(self, mh_step, impute_lrs, alpha, outcome_loss, sigma_list, x, treat, y, temperature):
+    def backward_imputation(self, mh_step, impute_lrs, alpha, outcome_loss, sigma_list, x, treat, y, temperature=1):
         # initialize momentum term and hidden units
         hidden_list, momentum_list = [], []
         hidden_list.append(self.module_list[0](x).detach())
