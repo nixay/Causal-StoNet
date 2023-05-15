@@ -7,7 +7,7 @@ import torch
 import os
 
 
-def data_preprocess(data, partition_seed, cross_fit_no, cross_val=3, scale=True):
+def data_preprocess(data, partition_seed, cross_fit_no, cross_val=3, x_scale=True, y_scale=True):
     """
     data: Dataset object
         map-style dataset (only map-style dataset has __len__() property)
@@ -17,8 +17,10 @@ def data_preprocess(data, partition_seed, cross_fit_no, cross_val=3, scale=True)
         the data subset that is going to be used as train set; note that we use three-fold cross fitting.
     cross_val: int
         the number of cross-validation folds
-    scale: bool
-        whether the input and the output will be scaled
+    x_scale: bool
+        whether the input variables will be scaled
+    y_scale: bool
+        whether the output variable will be scaled
     """
     data_size = data.__len__()
     size = int(data_size/cross_val)
@@ -31,20 +33,20 @@ def data_preprocess(data, partition_seed, cross_fit_no, cross_val=3, scale=True)
     val_indices = val_set.indices
     train_indices = list(np.concatenate([cross_fit_set[i].indices for i in range(cross_val-1)]).flat)
 
-    if scale:
-        x_scalar = RobustScaler()
+    x_scalar = RobustScaler()
+    y_scalar = RobustScaler()
+
+    if x_scale:
         x_scalar.fit(data.num_var[train_indices])
         data.num_var[train_indices] = np.array(x_scalar.transform(data.num_var[train_indices]))
         data.num_var[val_indices] = np.array(x_scalar.transform(data.num_var[val_indices]))
 
-        y_scalar = RobustScaler()
+    if y_scale:
         y_scalar.fit(data.y[train_indices])
         data.y[train_indices] = np.array(y_scalar.transform(data.y[train_indices]))
         data.y[val_indices] = np.array(y_scalar.transform(data.y[val_indices]))
 
-        return train_set, val_set, x_scalar, y_scalar
-    else:
-        return train_set, val_set
+    return train_set, val_set, x_scalar, y_scalar
 
 
 # Simulation Dataset
@@ -374,4 +376,27 @@ class TwinsData(Dataset):
         y = self.y[idx]
         treat = self.treat[idx]
         x = self.x[idx]
+        return y, treat, x
+
+
+# TCGA Dataset
+class TCGA(Dataset):
+    # note that for multi-level treatment dataset, the treatment variable has to be modeled as [treat1, treat2, control]
+    def __init__(self):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        data = pd.read_csv("./raw_data/tcga/tcga_data.csv")
+        self.data_size = len(data.index)
+
+        self.treat = torch.FloatTensor(np.array(data[['rad', 'sur', 'control']], dtype=np.float32)).to(self.device)
+        self.y = torch.FloatTensor(np.array(data['recur'].astype('float') != -1)).long().to(self.device)
+        self.num_var = np.array(data.loc[:, ~data.columns.isin(['death', 'recur', 'sur', 'rad', 'control'])],
+                                dtype=np.float32)
+
+    def __len__(self):
+        return int(self.data_size)
+
+    def __getitem__(self, idx):
+        y = self.y[idx]
+        treat = self.treat[idx]
+        x = torch.FloatTensor(self.num_var[idx]).to(self.device)
         return y, treat, x
