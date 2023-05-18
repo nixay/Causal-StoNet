@@ -12,6 +12,7 @@ import json
 import torch.nn as nn
 from sklearn.utils import class_weight
 import pickle
+from pickle import dump
 
 parser = argparse.ArgumentParser(description='Run Causal StoNet for TCGA data')
 # Basic Setting
@@ -67,10 +68,14 @@ def main():
 
     # dataset preprocessing
     data = TCGA()
+    labels = np.argmax(data.treat, axis=1)
+    class_weights_treat = class_weight.compute_class_weight(class_weight='balanced',classes=np.unique(labels),
+                                                            y=labels.numpy())
+    class_weights_treat = torch.tensor(class_weights_treat, dtype=torch.float)
     if classification_flag:
-        class_weights = class_weight.compute_class_weight(class_weight='balanced',classes=np.unique(data.y),
+        class_weights_out = class_weight.compute_class_weight(class_weight='balanced',classes=np.unique(data.y),
                                                         y=data.y.numpy())
-        class_weights = torch.tensor(class_weights,dtype=torch.float)
+        class_weights_out = torch.tensor(class_weights_out,dtype=torch.float)
     cross_fit_no = args.cross_fit_no
     train_set, val_set, x_scalar, _ = data_preprocess(data, args.partition_seed, cross_fit_no,
                                                       args.cross_val_fold, y_scale=False)
@@ -85,7 +90,7 @@ def main():
     _, _, x_temp = next(iter(train_set))
     net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=x_temp.size(dim=0),
                     output_dim=len(data.y.unique()) if classification_flag else 1,
-                    treat_layer=args.depth, treat_node=args.treat_node)
+                    treat_layer=args.depth, treat_node=args.treat_node, CE_weight=class_weights_treat)
 
     # number of independent runs for sparsity
     prune_seed = args.prune_seed
@@ -161,7 +166,7 @@ def main():
                       mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                       prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
                       impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
-                      temperature=temperature, CE_weight=class_weights)
+                      temperature=temperature, CE_weight=class_weights_out)
 
     # pretrain
     print("Pretrain")
@@ -308,14 +313,20 @@ def main():
 
     # save overall performance
     # training results containers
-    results = dict(dim=dim, BIC = BIC, num_selection_out=num_selection_out, num_selection_treat=num_selection_treat,
-               out_train_loss=out_train_loss, out_val_loss=out_val_loss, out_train_acc=out_train_acc,
+    results = dict(dim=dim, out_train_loss=out_train_loss, out_val_loss=out_val_loss, out_train_acc=out_train_acc,
                out_val_acc=out_val_acc, treat_train_loss=treat_train_loss, treat_val_loss=treat_val_loss,
                treat_train_acc=treat_train_acc, treat_val_acc=treat_val_acc)
-    with open(os.path.join(base_path, 'results.pkl'), 'wb') as f:
+    with open(os.path.join(base_path, 'results'+ str(prune_seed) +'.pkl'), 'wb') as f:
         pickle.dump(results, f)
 
+    np.savetxt(os.path.join(base_path, 'BIC' + str(prune_seed) + '.txt'), np.array([BIC]), fmt="%s")
+    np.savetxt(os.path.join(base_path, 'num_selected_variables_out'+ str(prune_seed) + '.txt'),
+               np.array([num_selection_out]), fmt="%s")
+    np.savetxt(os.path.join(base_path, 'num_selected_variables_treat'+ str(prune_seed) +'.txt'),
+               np.array([num_selection_treat]), fmt="%s")
 
+    # save scalars
+    dump(x_scalar, open(os.path.join(base_path, 'x_scalar.pkl'), 'wb'))
 
 if __name__ == '__main__':
     main()
