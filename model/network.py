@@ -4,7 +4,8 @@ import numpy as np
 
 
 class StoNet_Causal(nn.Module):
-    def __init__(self, num_hidden, hidden_dim, input_dim, output_dim, treat_layer, treat_node):
+    def __init__(self, num_hidden, hidden_dim, input_dim, output_dim, treat_layer, treat_node,
+                 CE_weight = None):
         """
         initialize the network
         num_hidden: int
@@ -19,6 +20,7 @@ class StoNet_Causal(nn.Module):
             the layer with treatment variable
         treat_node: list of int
             the hidden node that the treatment variables are located at
+        CE_weight: weight for different labels of treatment variable
         """
         super(StoNet_Causal, self).__init__()
         self.num_hidden = num_hidden
@@ -44,9 +46,9 @@ class StoNet_Causal(nn.Module):
         self.sse = nn.MSELoss(reduction='sum')
 
         if isinstance(self.treat_node, (list, tuple, np.ndarray)):
-            self.treat_loss = nn.CrossEntropyLoss(reduction='sum')
+            self.treat_loss = nn.CrossEntropyLoss(weight=CE_weight, reduction='sum')
         else:
-            self.treat_loss = nn.BCEWithLogitsLoss(reduction='sum')
+            self.treat_loss = nn.BCEWithLogitsLoss(weight=CE_weight, reduction='sum')
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
