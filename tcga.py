@@ -316,17 +316,17 @@ def main():
     results = dict(dim=dim, out_train_loss=out_train_loss, out_val_loss=out_val_loss, out_train_acc=out_train_acc,
                out_val_acc=out_val_acc, treat_train_loss=treat_train_loss, treat_val_loss=treat_val_loss,
                treat_train_acc=treat_train_acc, treat_val_acc=treat_val_acc)
-    with open(os.path.join(base_path, 'results'+ str(prune_seed) +'.pkl'), 'wb') as f:
+    with open(os.path.join(PATH, 'results'+ str(prune_seed) +'.pkl'), 'wb') as f:
         pickle.dump(results, f)
 
-    np.savetxt(os.path.join(base_path, 'BIC' + str(prune_seed) + '.txt'), np.array([BIC]), fmt="%s")
-    np.savetxt(os.path.join(base_path, 'num_selected_variables_out'+ str(prune_seed) + '.txt'),
+    np.savetxt(os.path.join(PATH, 'BIC' + str(prune_seed) + '.txt'), np.array([BIC]), fmt="%s")
+    np.savetxt(os.path.join(PATH, 'num_selected_variables_out'+ str(prune_seed) + '.txt'),
                np.array([num_selection_out]), fmt="%s")
-    np.savetxt(os.path.join(base_path, 'num_selected_variables_treat'+ str(prune_seed) +'.txt'),
+    np.savetxt(os.path.join(PATH, 'num_selected_variables_treat'+ str(prune_seed) +'.txt'),
                np.array([num_selection_treat]), fmt="%s")
 
     # save scalars
-    dump(x_scalar, open(os.path.join(base_path, 'x_scalar.pkl'), 'wb'))
+    dump(x_scalar, open(os.path.join(PATH, 'x_scalar.pkl'), 'wb'))
 
 if __name__ == '__main__':
     main()
