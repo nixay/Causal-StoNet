@@ -11,6 +11,7 @@ from torch.optim import SGD
 import json
 import torch.nn as nn
 from sklearn.utils import class_weight
+import pickle
 
 parser = argparse.ArgumentParser(description='Run Causal StoNet for TCGA data')
 # Basic Setting
@@ -46,7 +47,7 @@ parser.add_argument('--para_lr_decay', default=1.2, type=float, help='decay fact
 parser.add_argument('--impute_lr_decay', default=1, type=float, help='decay factor for impute_lr')
 
 # Parameters for Sparsity
-parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
+parser.add_argument('--prune_seed', default=1, type=int, help='independent try for sparsity')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
 parser.add_argument('--para_lr_fine_tune', default=[1e-4, 1e-5, 1e-6, 1e-10], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
@@ -87,7 +88,7 @@ def main():
                     treat_layer=args.depth, treat_node=args.treat_node)
 
     # number of independent runs for sparsity
-    num_seed = args.num_run
+    prune_seed = args.prune_seed
 
     # training setting
     para_lrs_train = args.para_lr_train
@@ -114,22 +115,6 @@ def main():
     threshold = np.sqrt(np.log((1 - lambda_n) / lambda_n * np.sqrt(prior_sigma_1 / prior_sigma_0)) / (
             0.5 / prior_sigma_0 - 0.5 / prior_sigma_1))
 
-    # training results containers
-    dim_list = np.zeros([num_seed])  # total number of non-zero parameters of the pruned network
-    BIC_list = np.zeros([num_seed])  # BIC
-    num_selection_out_list = np.zeros([num_seed])  # number of selected input for outcome variable
-    num_selection_treat_list = np.zeros([num_seed])  # number of selected input for treatment
-    out_train_loss_list = np.zeros([num_seed])
-    out_val_loss_list = np.zeros([num_seed])
-    if classification_flag:
-        out_train_acc_list = np.zeros([num_seed])
-        out_val_acc_list = np.zeros([num_seed])
-    treat_train_loss_list = np.zeros([num_seed])
-    treat_val_loss_list = np.zeros([num_seed])
-    treat_train_acc_list = np.zeros([num_seed])
-    treat_val_acc_list = np.zeros([num_seed])
-    ate_list = np.zeros((num_seed, 2))  # estimated average treatment effect
-
     # path to save the result
     base_path = os.path.join('.', 'tcga', 'result')
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)+ '_' + str(temperature)
@@ -139,256 +124,197 @@ def main():
     base_path = os.path.join(base_path, basic_spec, spec, decay_spec, str(cross_fit_no))
 
     # Training starts here
-    for prune_seed in range(num_seed):
-        print('number of runs', prune_seed)
+    print('number of runs', prune_seed)
 
-        # create the path to save model results
-        PATH = os.path.join(base_path, str(prune_seed))
-        if not os.path.isdir(PATH):
-            try:
-                os.makedirs(PATH)
-            except OSError as exc:  # Python >2.5
-                if exc.errno == errno.EEXIST and os.path.isdir(PATH):
-                    pass
-                else:
-                    raise
+    # create the path to save model results
+    PATH = os.path.join(base_path, str(prune_seed))
+    if not os.path.isdir(PATH):
+        try:
+            os.makedirs(PATH)
+        except OSError as exc:  # Python >2.5
+            if exc.errno == errno.EEXIST and os.path.isdir(PATH):
+                pass
+            else:
+                raise
 
-        # initialize network
-        np.random.seed(prune_seed)
-        torch.manual_seed(prune_seed)
-        net = StoNet_Causal(**net_args)
-        net.to(device)
+    # initialize network
+    np.random.seed(prune_seed)
+    torch.manual_seed(prune_seed)
+    net = StoNet_Causal(**net_args)
+    net.to(device)
 
-        # define optimizer
-        optimizer_list_train = []
-        for i in range(net.num_hidden + 1):
-            # set maximize = True to do gradient ascent
-            optimizer_list_train.append(SGD(net.module_list[i].parameters(), lr=para_lrs_train[i],
+    # define optimizer
+    optimizer_list_train = []
+    for i in range(net.num_hidden + 1):
+        # set maximize = True to do gradient ascent
+        optimizer_list_train.append(SGD(net.module_list[i].parameters(), lr=para_lrs_train[i],
+                                        momentum=para_momentum, maximize=True))
+
+    optimizer_list_fine_tune = []
+    for j in range(net.num_hidden + 1):
+        # set maximize = True to do gradient ascent
+        optimizer_list_fine_tune.append(SGD(net.module_list[j].parameters(), lr=para_lrs_fine_tune[j],
                                             momentum=para_momentum, maximize=True))
 
-        optimizer_list_fine_tune = []
-        for j in range(net.num_hidden + 1):
-            # set maximize = True to do gradient ascent
-            optimizer_list_fine_tune.append(SGD(net.module_list[j].parameters(), lr=para_lrs_fine_tune[j],
-                                                momentum=para_momentum, maximize=True))
+    # parameters for training
+    optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
+                      mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
+                      prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
+                      impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
+                      temperature=temperature, CE_weight=class_weights)
 
-        # parameters for training
-        optim_args = dict(train_data=train_data, val_data=val_data, batch_size=batch_size, alpha=args.impute_alpha,
-                          mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
-                          prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
-                          impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
-                          temperature=temperature, CE_weight=class_weights)
+    # pretrain
+    print("Pretrain")
+    output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
+                               impute_lrs=impute_lrs, **optim_args)
+    para_pretrain = output_pretrain["para_path"]
+    para_grad_pretrain = output_pretrain["para_grad_path"]
+    # para_gamma_pretrain = output_pretrain["para_gamma_path"]
+    performance_pretrain = output_pretrain["performance"]
 
-        # pretrain
-        print("Pretrain")
-        output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
-                                   impute_lrs=impute_lrs, **optim_args)
-        para_pretrain = output_pretrain["para_path"]
-        para_grad_pretrain = output_pretrain["para_grad_path"]
-        para_gamma_pretrain = output_pretrain["para_gamma_path"]
-        performance_pretrain = output_pretrain["performance"]
+    # para_gamma_file = open(os.path.join(PATH, 'para_gamma_pretrain.json'), "w")
+    # json.dump(para_gamma_pretrain, para_gamma_file, indent="")
+    # para_gamma_file.close()
 
-        para_gamma_file = open(os.path.join(PATH, 'para_gamma_pretrain.json'), "w")
-        json.dump(para_gamma_pretrain, para_gamma_file, indent="")
-        para_gamma_file.close()
+    with open(os.path.join(PATH, 'para_pretrain.pkl'), 'wb') as f:
+        pickle.dump(para_pretrain, f)
 
-        para_file = open(os.path.join(PATH, 'para_pretrain.json'), "w")
-        json.dump(para_pretrain, para_file, indent="")
-        para_file.close()
+    with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), 'wb') as f:
+        pickle.dump(para_grad_pretrain, f)
 
-        para_grad_file = open(os.path.join(PATH, 'para_grad_pretrain.json'), "w")
-        json.dump(para_grad_pretrain, para_grad_file, indent="")
-        para_grad_file.close()
+    with open(os.path.join(PATH, 'performance_pretrain.pkl'), 'wb') as f:
+        pickle.dump(performance_pretrain, f)
 
-        performance_file = open(os.path.join(PATH, 'performance_pretrain.json'), "w")
-        json.dump(performance_pretrain, performance_file, indent="")
-        performance_file.close()
+    # train
+    print("Train")
+    output_train = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train,
+                            impute_lrs=impute_lrs, **optim_args)
+    para_train = output_train["para_path"]
+    para_grad_train = output_train["para_grad_path"]
+    #para_gamma_train = output_train["para_gamma_path"]
+    var_gamma_out_train = output_train["input_gamma_path"]["var_selected_out"]
+    num_gamma_out_train = output_train["input_gamma_path"]["num_selected_out"]
+    var_gamma_treat_train = output_train["input_gamma_path"]["var_selected_treat"]
+    num_gamma_treat_train = output_train["input_gamma_path"]["num_selected_treat"]
+    performance_train = output_train["performance"]
+    impute_lrs_fine_tune = output_train["impute_lrs"]
 
-        # train
-        print("Train")
-        output_train = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train,
-                                impute_lrs=impute_lrs, **optim_args)
-        para_train = output_train["para_path"]
-        para_grad_train = output_train["para_grad_path"]
-        para_gamma_train = output_train["para_gamma_path"]
-        var_gamma_out_train = output_train["input_gamma_path"]["var_selected_out"]
-        num_gamma_out_train = output_train["input_gamma_path"]["num_selected_out"]
-        var_gamma_treat_train = output_train["input_gamma_path"]["var_selected_treat"]
-        num_gamma_treat_train = output_train["input_gamma_path"]["num_selected_treat"]
-        performance_train = output_train["performance"]
-        impute_lrs_fine_tune = output_train["impute_lrs"]
-
-        # prune network parameters
-        with torch.no_grad():
-            for name, para in net.named_parameters():
-                para.data = torch.FloatTensor(para_train[str(training_epochs-1)][name]).to(device)
-
-        user_mask = {}
+    # prune network parameters
+    with torch.no_grad():
         for name, para in net.named_parameters():
-            user_mask[name] = para.abs() < threshold
-        net.set_prune(user_mask)
+            para.data = torch.FloatTensor(para_train[str(training_epochs-1)][name]).to(device)
 
-        # save model training results
-        num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs-1]
-        num_selection_treat_list[prune_seed] = num_gamma_treat_train[training_epochs-1]
+    user_mask = {}
+    for name, para in net.named_parameters():
+        user_mask[name] = para.abs() < threshold
+    net.set_prune(user_mask)
 
-        temp_str = [str(int(x)) for x in var_gamma_out_train[str(training_epochs-1)]]
-        temp_str = ' '.join(temp_str)
-        filename = PATH + 'selected_variable_out.txt'
-        f = open(filename, 'w')
-        f.write(temp_str)
-        f.close()
+    # save model training results
+    num_selection_out = num_gamma_out_train[training_epochs-1]
+    num_selection_treat = num_gamma_treat_train[training_epochs-1]
 
-        temp_str = [str(int(x)) for x in var_gamma_treat_train[str(training_epochs-1)]]
-        temp_str = ' '.join(temp_str)
-        filename = PATH + 'selected_variable_treat.txt'
-        f = open(filename, 'w')
-        f.write(temp_str)
-        f.close()
+    temp_str = [str(int(x)) for x in var_gamma_out_train[str(training_epochs-1)]]
+    temp_str = ' '.join(temp_str)
+    filename = PATH + 'selected_variable_out.txt'
+    f = open(filename, 'w')
+    f.write(temp_str)
+    f.close()
 
-        para_gamma_file = open(os.path.join(PATH, 'para_gamma_train.json'), "w")
-        json.dump(para_gamma_train, para_gamma_file, indent="")
-        para_gamma_file.close()
+    temp_str = [str(int(x)) for x in var_gamma_treat_train[str(training_epochs-1)]]
+    temp_str = ' '.join(temp_str)
+    filename = PATH + 'selected_variable_treat.txt'
+    f = open(filename, 'w')
+    f.write(temp_str)
+    f.close()
 
-        para_file = open(os.path.join(PATH, 'para_train.json'), "w")
-        json.dump(para_train, para_file, indent="")
-        para_file.close()
+    with open(os.path.join(PATH, 'para_train.pkl'), 'wb') as f:
+        pickle.dump(para_train, f)
 
-        para_grad_file = open(os.path.join(PATH, 'para_grad_train.json'), "w")
-        json.dump(para_grad_train, para_grad_file, indent="")
-        para_grad_file.close()
+    with open(os.path.join(PATH, 'para_grad_train.pkl'), 'wb') as f:
+        pickle.dump(para_grad_train, f)
 
-        performance_file = open(os.path.join(PATH, 'performance_train.json'), "w")
-        json.dump(performance_train, performance_file, indent="")
-        performance_file.close()
+    with open(os.path.join(PATH, 'performance_train.pkl'), 'wb') as f:
+        pickle.dump(performance_train, f)
 
-        var_gamma_file = open(os.path.join(PATH, 'var_gamma_out_train.json'), "w")
-        json.dump(var_gamma_out_train, var_gamma_file, indent="")
-        var_gamma_file.close()
+    # refine non-zero network parameters
+    print("Refine Weight")
+    output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
+                                impute_lrs=impute_lrs_fine_tune, **optim_args)
+    para_fine_tune = output_fine_tune["para_path"]
+    para_grad_fine_tune = output_fine_tune["para_grad_path"]
+    #para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
+    #var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
+    #num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
+    #var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
+    #num_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_treat"]
+    performance_fine_tune = output_fine_tune["performance"]
+    likelihoods = output_fine_tune["likelihoods"]
 
-        num_gamma_file = open(os.path.join(PATH, 'num_selected_out_train.json'), "w")
-        json.dump(num_gamma_out_train, num_gamma_file, indent="")
-        num_gamma_file.close()
+    # save refining results
+    # para_gamma_file = open(os.path.join(PATH, 'para_gamma_fine_tune.json'), "w")
+    # json.dump(para_gamma_fine_tune, para_gamma_file, indent="")
+    # para_gamma_file.close()
 
-        var_gamma_file = open(os.path.join(PATH, 'var_gamma_treat_train.json'), "w")
-        json.dump(var_gamma_treat_train, var_gamma_file, indent="")
-        var_gamma_file.close()
+    with open(os.path.join(PATH, 'para_fine_tune.pkl'), 'wb') as f:
+        pickle.dump(para_fine_tune, f)
 
-        num_gamma_file = open(os.path.join(PATH, 'num_selected_treat_train.json'), "w")
-        json.dump(num_gamma_treat_train, num_gamma_file, indent="")
-        num_gamma_file.close()
+    with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), 'wb') as f:
+        pickle.dump(para_grad_fine_tune, f)
 
-        # refine non-zero network parameters
-        print("Refine Weight")
-        output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
-                                    impute_lrs=impute_lrs_fine_tune, **optim_args)
-        para_fine_tune = output_fine_tune["para_path"]
-        para_grad_fine_tune = output_fine_tune["para_grad_path"]
-        para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
-        var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
-        num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
-        var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
-        num_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_treat"]
-        performance_fine_tune = output_fine_tune["performance"]
-        likelihoods = output_fine_tune["likelihoods"]
+    with open(os.path.join(PATH, 'performance_fine_tune.pkl'), 'wb') as f:
+        pickle.dump(performance_fine_tune, f)
 
-        # save refining results
-        para_gamma_file = open(os.path.join(PATH, 'para_gamma_fine_tune.json'), "w")
-        json.dump(para_gamma_fine_tune, para_gamma_file, indent="")
-        para_gamma_file.close()
+    # var_gamma_file = open(os.path.join(PATH, 'var_gamma_out_fine_tune.json'), "w")
+    # json.dump(var_gamma_out_fine_tune, var_gamma_file, indent="")
+    # var_gamma_file.close()
 
-        para_file = open(os.path.join(PATH, 'para_fine_tune.json'), "w")
-        json.dump(para_fine_tune, para_file, indent="")
-        para_file.close()
+    # num_gamma_file = open(os.path.join(PATH, 'num_selected_out_fine_tune.json'), "w")
+    # json.dump(num_gamma_out_fine_tune, num_gamma_file, indent="")
+    # num_gamma_file.close()
 
-        para_grad_file = open(os.path.join(PATH, 'para_grad_fine_tune.json'), "w")
-        json.dump(para_grad_fine_tune, para_grad_file, indent="")
-        para_grad_file.close()
+    # var_gamma_file = open(os.path.join(PATH, 'var_gamma_treat_fine_tune.json'), "w")
+    # json.dump(var_gamma_treat_fine_tune, var_gamma_file, indent="")
+    # var_gamma_file.close()
 
-        performance_file = open(os.path.join(PATH, 'performance_fine_tune.json'), "w")
-        json.dump(performance_fine_tune, performance_file, indent="")
-        performance_file.close()
+    # num_gamma_file = open(os.path.join(PATH, 'num_selected_treat_fine_tune.json'), "w")
+    # json.dump(num_gamma_treat_fine_tune, num_gamma_file, indent="")
+    # num_gamma_file.close()
 
-        var_gamma_file = open(os.path.join(PATH, 'var_gamma_out_fine_tune.json'), "w")
-        json.dump(var_gamma_out_fine_tune, var_gamma_file, indent="")
-        var_gamma_file.close()
+    # save training results for the final run
+    out_train_loss = performance_fine_tune['out_train_loss'][-1]
+    out_val_loss= performance_fine_tune['out_val_loss'][-1]
+    if classification_flag:
+        out_train_acc = performance_fine_tune['out_train_acc'][-1]
+        out_val_acc = performance_fine_tune['out_val_acc'][-1]
 
-        num_gamma_file = open(os.path.join(PATH, 'num_selected_out_fine_tune.json'), "w")
-        json.dump(num_gamma_out_fine_tune, num_gamma_file, indent="")
-        num_gamma_file.close()
+    treat_train_loss = performance_fine_tune['treat_train_loss'][-1]
+    treat_val_loss = performance_fine_tune['treat_val_loss'][-1]
+    treat_train_acc = performance_fine_tune['treat_train_acc'][-1]
+    treat_val_acc = performance_fine_tune['treat_val_acc'][-1]
 
-        var_gamma_file = open(os.path.join(PATH, 'var_gamma_treat_fine_tune.json'), "w")
-        json.dump(var_gamma_treat_fine_tune, var_gamma_file, indent="")
-        var_gamma_file.close()
+    # calculate non-zero connections and BIC
+    with torch.no_grad():
+        num_non_zero_element = 0
+        for name, para in net.named_parameters():
+            num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
+        dim = num_non_zero_element
 
-        num_gamma_file = open(os.path.join(PATH, 'num_selected_treat_fine_tune.json'), "w")
-        json.dump(num_gamma_treat_fine_tune, num_gamma_file, indent="")
-        num_gamma_file.close()
+        BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
 
-        # save training results for the final run
-        out_train_loss_list[prune_seed] = performance_fine_tune['out_train_loss'][-1]
-        out_val_loss_list[prune_seed] = performance_fine_tune['out_val_loss'][-1]
-        if classification_flag:
-            out_train_acc_list[prune_seed] = performance_fine_tune['out_train_acc'][-1]
-            out_val_acc_list[prune_seed] = performance_fine_tune['out_val_acc'][-1]
+        print("number of non-zero connections:", num_non_zero_element.item())
+        print('BIC:', BIC)
 
-        treat_train_loss_list[prune_seed] = performance_fine_tune['treat_train_loss'][-1]
-        treat_val_loss_list[prune_seed] = performance_fine_tune['treat_val_loss'][-1]
-        treat_train_acc_list[prune_seed] = performance_fine_tune['treat_train_acc'][-1]
-        treat_val_acc_list[prune_seed] = performance_fine_tune['treat_val_acc'][-1]
-
-        # calculate non-zero connections and BIC
-        with torch.no_grad():
-            num_non_zero_element = 0
-            for name, para in net.named_parameters():
-                num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
-            dim_list[prune_seed] = num_non_zero_element
-
-            BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
-            BIC_list[prune_seed] = BIC
-
-            print("number of non-zero connections:", num_non_zero_element.item())
-            print('BIC:', BIC)
-
-        # calculate doubly-robust estimator of ate: when the outcome variable is binary
-        m = nn.Softmax(dim=1)
-        ate_db = np.zeros(3)
-        peudo_treat = torch.tensor([[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]])
-        with torch.no_grad():
-            for y, treat, x in val_data:
-                _, prop_score = net.forward(x, treat)
-                for group in range(len(treat[0])):
-                    prop = prop_score[:, group]  # propensity score
-
-                    peudo_treat = peudo_treat[group].repeat(len(y), 1)
-                    pred, _ = net.forward(x, peudo_treat)
-                    pred = m(pred)[:, 1]  # outcome
-
-                    resid = torch.flatten(y - pred)
-                    estimate = torch.flatten(pred + (resid/prop) * (treat[:,group] == 1))
-
-                    ate_db[group] += torch.sum(estimate).item()
-
-            ate_list[prune_seed, 0] = (ate_db[0] - ate_db[-1])/len(val_set)
-            ate_list[prune_seed, 1] = (ate_db[1] - ate_db[-1])/len(val_set)
-
-        torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
+    torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
 
     # save overall performance
-    np.savetxt(os.path.join(base_path, 'Overall_train_loss_out.txt'), out_train_loss_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_val_loss_out.txt'), out_val_loss_list, fmt="%s")
-    if classification_flag:
-        np.savetxt(os.path.join(base_path, 'Overall_train_acc_out.txt'), out_train_acc_list, fmt="%s")
-        np.savetxt(os.path.join(base_path, 'Overall_val_acc_out.txt'), out_val_acc_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_train_loss_treat.txt'), treat_train_loss_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_val_loss_treat.txt'), treat_val_loss_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_train_acc_treat.txt'), treat_train_acc_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_val_acc_treat.txt'), treat_val_acc_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_BIC.txt'), BIC_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_non_zero_connections.txt'), dim_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_selected_variables_out.txt'), num_selection_out_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_selected_variables_treat.txt'), num_selection_treat_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_ATE.txt'), ate_list, fmt="%s")
+    # training results containers
+    results = dict(dim=dim, BIC = BIC, num_selection_out=num_selection_out, num_selection_treat=num_selection_treat,
+               out_train_loss=out_train_loss, out_val_loss=out_val_loss, out_train_acc=out_train_acc,
+               out_val_acc=out_val_acc, treat_train_loss=treat_train_loss, treat_val_loss=treat_val_loss,
+               treat_train_acc=treat_train_acc, treat_val_acc=treat_val_acc)
+    with open(os.path.join(base_path, 'results.pkl'), 'wb') as f:
+        pickle.dump(results, f)
+
 
 
 if __name__ == '__main__':
