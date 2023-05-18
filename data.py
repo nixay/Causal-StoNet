@@ -384,11 +384,11 @@ class TCGA(Dataset):
     # note that for multi-level treatment dataset, the treatment variable has to be modeled as [treat1, treat2, control]
     def __init__(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        data = pd.read_csv("./raw_data/tcga/tcga_data.csv")
+        data = pd.read_csv("./raw_data/tcga/tcga_data_screened.csv")
         self.data_size = len(data.index)
 
         self.treat = torch.FloatTensor(np.array(data[['rad', 'sur', 'control']], dtype=np.float32)).to(self.device)
-        self.y = torch.FloatTensor(np.array(data['recur'].astype('float') != -1)).long().to(self.device)
+        self.y = torch.FloatTensor(np.array(data['recur'])).long().to(self.device)
         self.num_var = np.array(data.loc[:, ~data.columns.isin(['death', 'recur', 'sur', 'rad', 'control'])],
                                 dtype=np.float32)
 
