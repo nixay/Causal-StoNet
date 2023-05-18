@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
              sigma_list, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
-             impute_lr_decay, temperature, scalar_y=1, outcome_cat=False, CE_weight=False):
+             impute_lr_decay, temperature, scalar_y=1, outcome_cat=False, CE_weight=None):
 
     """
     train the network
@@ -117,7 +117,6 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
     # settings for output loss functions
     if outcome_cat:
         # calculate the weight for each class
-
         out_loss = nn.CrossEntropyLoss(weight=CE_weight)
         out_loss_sum = nn.CrossEntropyLoss(weight=CE_weight, reduction='sum')
     else:
