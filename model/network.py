@@ -62,9 +62,9 @@ class StoNet_Causal(nn.Module):
             if layer_index == self.treat_layer:
                 logits = torch.clone(x[:, self.treat_node])
                 if isinstance(self.treat_node, (list, tuple, np.ndarray)):
-                    ps = torch.softmax(logits/temperature, dim=1)
+                    ps = torch.softmax(logits, dim=1)
                 else:
-                    ps = torch.sigmoid(logits/temperature)
+                    ps = torch.sigmoid(logits)
                 x[:, self.treat_node] = treat
         return x, ps
 
@@ -86,7 +86,7 @@ class StoNet_Causal(nn.Module):
 
             z_treat = z[:, self.treat_node]
             treat = hidden_list[layer_index][:, self.treat_node]
-            likelihood_treat = -self.treat_loss(z_treat/temperature, treat)
+            likelihood_treat = -self.treat_loss(z_treat, treat)*temperature
 
             if isinstance(self.treat_node, (list, tuple, np.ndarray)):
                 lower = self.treat_node[0]
