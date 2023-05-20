@@ -389,7 +389,7 @@ class TCGA(Dataset):
 
         self.treat = torch.FloatTensor(np.array(data[['rad', 'sur', 'control']], dtype=np.float32)).to(self.device)
         self.y = torch.FloatTensor(np.array(data['recur'])).long().to(self.device)
-        self.num_var = np.array(data.loc[:, ~data.columns.isin(['death', 'recur', 'sur', 'rad', 'control'])],
+        self.num_var = np.array(data.loc[:, ~data.columns.isin(['recur', 'sur', 'rad', 'control'])],
                                 dtype=np.float32)
 
     def __len__(self):
