@@ -181,11 +181,11 @@ def main():
     # json.dump(para_gamma_pretrain, para_gamma_file, indent="")
     # para_gamma_file.close()
 
-    with open(os.path.join(PATH, 'para_pretrain.pkl'), 'wb') as f:
-        pickle.dump(para_pretrain, f)
-
-    with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), 'wb') as f:
-        pickle.dump(para_grad_pretrain, f)
+    # with open(os.path.join(PATH, 'para_pretrain.pkl'), 'wb') as f:
+    #     pickle.dump(para_pretrain, f)
+    #
+    # with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), 'wb') as f:
+    #     pickle.dump(para_grad_pretrain, f)
 
     with open(os.path.join(PATH, 'performance_pretrain.pkl'), 'wb') as f:
         pickle.dump(performance_pretrain, f)
@@ -232,11 +232,11 @@ def main():
     f.write(temp_str)
     f.close()
 
-    with open(os.path.join(PATH, 'para_train.pkl'), 'wb') as f:
-        pickle.dump(para_train, f)
-
-    with open(os.path.join(PATH, 'para_grad_train.pkl'), 'wb') as f:
-        pickle.dump(para_grad_train, f)
+    # with open(os.path.join(PATH, 'para_train.pkl'), 'wb') as f:
+    #     pickle.dump(para_train, f)
+    #
+    # with open(os.path.join(PATH, 'para_grad_train.pkl'), 'wb') as f:
+    #     pickle.dump(para_grad_train, f)
 
     with open(os.path.join(PATH, 'performance_train.pkl'), 'wb') as f:
         pickle.dump(performance_train, f)
@@ -260,11 +260,11 @@ def main():
     # json.dump(para_gamma_fine_tune, para_gamma_file, indent="")
     # para_gamma_file.close()
 
-    with open(os.path.join(PATH, 'para_fine_tune.pkl'), 'wb') as f:
-        pickle.dump(para_fine_tune, f)
-
-    with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), 'wb') as f:
-        pickle.dump(para_grad_fine_tune, f)
+    # with open(os.path.join(PATH, 'para_fine_tune.pkl'), 'wb') as f:
+    #     pickle.dump(para_fine_tune, f)
+    #
+    # with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), 'wb') as f:
+    #     pickle.dump(para_grad_fine_tune, f)
 
     with open(os.path.join(PATH, 'performance_fine_tune.pkl'), 'wb') as f:
         pickle.dump(performance_fine_tune, f)
