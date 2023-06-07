@@ -156,4 +156,9 @@ def TCGA_bench():
     x = np.array(data.loc[:, ~data.columns.isin(['recur', 'sur', 'rad', 'control'])],
                  dtype=np.float32)
 
+    # data preprocess
+    x_scalar = RobustScaler()
+    x_scalar.fit(x)
+    x = np.array(x_scalar.transform(x))
+
     return y, treat, x

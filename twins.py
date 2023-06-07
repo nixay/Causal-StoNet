@@ -10,6 +10,7 @@ import errno
 from torch.optim import SGD
 import json
 import torch.nn as nn
+from pickle import dump
 
 parser = argparse.ArgumentParser(description='Run Causal StoNet for twins data')
 # Basic Setting
@@ -28,7 +29,7 @@ parser.add_argument('--sigma', default=[1e-3, 1e-4, 1e-5, 1e-6], type=float, nar
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
-parser.add_argument('--temp_scaling', default=200, type=float, help='multiplier to scale the treatment loss')
+parser.add_argument('--treat_loss_weight', default=200, type=float, help='weight for the treatment loss')
 parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
 parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
@@ -92,7 +93,7 @@ def main():
     fine_tune_epochs = args.fine_tune_epoch
     para_lr_decay = args.para_lr_decay
     impute_lr_decay = args.impute_lr_decay
-    temperature = args.temp_scaling
+    treat_loss_weight = args.treat_loss_weight
 
     # imputation parameters
     impute_lrs = args.impute_lr
@@ -126,7 +127,7 @@ def main():
 
     # path to save the result
     base_path = os.path.join('.', 'twins', 'result')
-    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)+ '_' + str(temperature)
+    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs)+ '_' + str(treat_loss_weight)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
@@ -171,32 +172,28 @@ def main():
                           mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
                           impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
-                          temperature=temperature)
+                          treat_loss_weight=treat_loss_weight)
 
         # pretrain
         print("Pretrain")
         output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
                                    impute_lrs=impute_lrs, **optim_args)
-        para_pretrain = output_pretrain["para_path"]
-        para_grad_pretrain = output_pretrain["para_grad_path"]
-        para_gamma_pretrain = output_pretrain["para_gamma_path"]
+        # para_pretrain = output_pretrain["para_path"]
+        # para_grad_pretrain = output_pretrain["para_grad_path"]
+        # para_gamma_pretrain = output_pretrain["para_gamma_path"]
         performance_pretrain = output_pretrain["performance"]
 
-        para_gamma_file = open(os.path.join(PATH, 'para_gamma_pretrain.json'), "w")
-        json.dump(para_gamma_pretrain, para_gamma_file, indent="")
-        para_gamma_file.close()
+        # with open(os.path.join(PATH, 'para_gamma_pretrain.pkl'), "w") as f:
+        #     dump(para_gamma_pretrain, f)
 
-        para_file = open(os.path.join(PATH, 'para_pretrain.json'), "w")
-        json.dump(para_pretrain, para_file, indent="")
-        para_file.close()
+        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "w") as f:
+        #     dump(para_pretrain, f)
 
-        para_grad_file = open(os.path.join(PATH, 'para_grad_pretrain.json'), "w")
-        json.dump(para_grad_pretrain, para_grad_file, indent="")
-        para_grad_file.close()
+        # with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "w") as f:
+        #     dump(para_grad_pretrain, f)
 
-        performance_file = open(os.path.join(PATH, 'performance_pretrain.json'), "w")
-        json.dump(performance_pretrain, performance_file, indent="")
-        performance_file.close()
+        with open(os.path.join(PATH, 'performance_pretrain.pkl'), "w") as f:
+            dump(performance_pretrain, f)
 
         # train
         print("Train")
@@ -349,9 +346,9 @@ def main():
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in val_data:
-                pred_score, prop_score = net.forward(x, treat, temperature)
+                pred_score, prop_score = net.forward(x, treat)
                 pred_prob = m(pred_score)[:, 1]  # E[Y|X, A] = P(Y=1|X, A)
-                counter_fact_score, _ = net.forward(x, 1 - treat, temperature)
+                counter_fact_score, _ = net.forward(x, 1 - treat)
                 counter_fact_prob = m(counter_fact_score)[:, 1]
                 outcome_contrast = torch.flatten(pred_prob-counter_fact_prob) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)

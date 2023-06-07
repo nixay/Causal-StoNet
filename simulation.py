@@ -9,6 +9,7 @@ import os
 import errno
 from torch.optim import SGD
 import json
+from pickle import dump
 
 parser = argparse.ArgumentParser(description='Run Simulation for Causal StoNet')
 # Basic Setting
@@ -32,7 +33,7 @@ parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nar
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
-parser.add_argument('--temp_scaling', default=1000, type=float, help='multiplier to scale the treatment loss')
+parser.add_argument('--treat_loss_weight', default=1000, type=float, help='weight for the treatment loss')
 parser.add_argument('--regression', dest='classification_flag', action='store_false', help='false for regression')
 parser.add_argument('--classification', dest='classification_flag', action='store_true', help='true for classification')
 
@@ -105,7 +106,7 @@ def main():
     fine_tune_epochs = args.fine_tune_epoch
     para_lr_decay = args.para_lr_decay
     impute_lr_decay = args.impute_lr_decay
-    temperature = args.temp_scaling
+    treat_loss_weight = args.treat_loss_weight
 
     # imputation parameters
     impute_lrs = args.impute_lr
@@ -140,7 +141,7 @@ def main():
 
     # path to save the result
     base_path = os.path.join('.', 'simulation', 'result', data_name, str(data_seed))
-    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(temperature)
+    basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(treat_loss_weight)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
@@ -182,39 +183,35 @@ def main():
                           mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
                           impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
-                          temperature=temperature)
+                          treat_loss_weight=treat_loss_weight)
         # pretrain
         print("Pretrain")
         output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
                                    impute_lrs=impute_lrs, **optim_args)
-        para_pretrain = output_pretrain["para_path"]
-        para_grad_pretrain = output_pretrain["para_grad_path"]
-        para_gamma_pretrain = output_pretrain["para_gamma_path"]
+        # para_pretrain = output_pretrain["para_path"]
+        # para_grad_pretrain = output_pretrain["para_grad_path"]
+        # para_gamma_pretrain = output_pretrain["para_gamma_path"]
         performance_pretrain = output_pretrain["performance"]
 
-        para_gamma_file = open(os.path.join(PATH, 'para_gamma_pretrain.json'), "w")
-        json.dump(para_gamma_pretrain, para_gamma_file, indent="")
-        para_gamma_file.close()
+        # with open(os.path.join(PATH, 'para_gamma_pretrain.pkl'), "w") as f:
+        #     dump(para_gamma_pretrain, f)
 
-        para_file = open(os.path.join(PATH, 'para_pretrain.json'), "w")
-        json.dump(para_pretrain, para_file, indent="")
-        para_file.close()
+        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "w") as f:
+        #     dump(para_pretrain, f)
 
-        para_grad_file = open(os.path.join(PATH, 'para_grad_pretrain.json'), "w")
-        json.dump(para_grad_pretrain, para_grad_file, indent="")
-        para_grad_file.close()
+        # with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "w") as f:
+        #     dump(para_grad_pretrain, f)
 
-        performance_file = open(os.path.join(PATH, 'performance_pretrain.json'), "w")
-        json.dump(performance_pretrain, performance_file, indent="")
-        performance_file.close()
+        with open(os.path.join(PATH, 'performance_pretrain.pkl'), "w") as f:
+            dump(performance_pretrain, f)
 
         # train
         print("Train")
         output_train = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train,
                                 impute_lrs=impute_lrs, **optim_args)
         para_train = output_train["para_path"]
-        para_grad_train = output_train["para_grad_path"]
-        para_gamma_train = output_train["para_gamma_path"]
+        # para_grad_train = output_train["para_grad_path"]
+        # para_gamma_train = output_train["para_gamma_path"]
         var_gamma_out_train = output_train["input_gamma_path"]["var_selected_out"]
         num_gamma_out_train = output_train["input_gamma_path"]["num_selected_out"]
         var_gamma_treat_train = output_train["input_gamma_path"]["var_selected_treat"]
@@ -250,84 +247,68 @@ def main():
         f.write(temp_str)
         f.close()
 
-        para_gamma_file = open(os.path.join(PATH, 'para_gamma_train.json'), "w")
-        json.dump(para_gamma_train, para_gamma_file, indent="")
-        para_gamma_file.close()
+        # with open(os.path.join(PATH, 'para_gamma_train.pkl'), "w") as f:
+        #     dump(para_gamma_train, f)
 
-        para_file = open(os.path.join(PATH, 'para_train.json'), "w")
-        json.dump(para_train, para_file, indent="")
-        para_file.close()
+        # with open(os.path.join(PATH, 'para_train.pkl'), "w") as f:
+        #     dump(para_train, f)
 
-        para_grad_file = open(os.path.join(PATH, 'para_grad_train.json'), "w")
-        json.dump(para_grad_train, para_grad_file, indent="")
-        para_grad_file.close()
+        # with open(os.path.join(PATH, 'para_grad_train.pkl'), "w") as f:
+        #     dump(para_grad_train, f)
 
-        performance_file = open(os.path.join(PATH, 'performance_train.json'), "w")
-        json.dump(performance_train, performance_file, indent="")
-        performance_file.close()
+        with open(os.path.join(PATH, 'performance_train.pkl'), "w") as f:
+            dump(performance_train, f)
 
-        var_gamma_file = open(os.path.join(PATH, 'var_gamma_out_train.json'), "w")
-        json.dump(var_gamma_out_train, var_gamma_file, indent="")
-        var_gamma_file.close()
+        # with open(os.path.join(PATH, 'var_gamma_out_train.pkl'), "w") as f:
+        #     dump(var_gamma_out_train, f)
 
-        num_gamma_file = open(os.path.join(PATH, 'num_selected_out_train.json'), "w")
-        json.dump(num_gamma_out_train, num_gamma_file, indent="")
-        num_gamma_file.close()
+        # with open(os.path.join(PATH, 'num_selected_out_train.pkl'), "w") as f:
+        #     dump(num_gamma_out_train, f)
 
-        var_gamma_file = open(os.path.join(PATH, 'var_gamma_treat_train.json'), "w")
-        json.dump(var_gamma_treat_train, var_gamma_file, indent="")
-        var_gamma_file.close()
+        # with open(os.path.join(PATH, 'var_gamma_treat_train.pkl'), "w") as f:
+        #     dump(var_gamma_treat_train, f)
 
-        num_gamma_file = open(os.path.join(PATH, 'num_selected_treat_train.json'), "w")
-        json.dump(num_gamma_treat_train, num_gamma_file, indent="")
-        num_gamma_file.close()
+        # with open(os.path.join(PATH, 'num_selected_treat_train.pkl'), "w") as f:
+        #     dump(num_gamma_treat_train, f)
 
         # refine non-zero network parameters
         print("Refine Weight")
         output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
                                     impute_lrs=impute_lrs_fine_tune, **optim_args)
-        para_fine_tune = output_fine_tune["para_path"]
-        para_grad_fine_tune = output_fine_tune["para_grad_path"]
-        para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
-        var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
-        num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
-        var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
-        num_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_treat"]
+        # para_fine_tune = output_fine_tune["para_path"]
+        # para_grad_fine_tune = output_fine_tune["para_grad_path"]
+        # para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
+        # var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
+        # num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
+        # var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
+        # num_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_treat"]
         performance_fine_tune = output_fine_tune["performance"]
         likelihoods = output_fine_tune["likelihoods"]
 
         # save fine tuning results
-        para_gamma_file = open(os.path.join(PATH, 'para_gamma_fine_tune.json'), "w")
-        json.dump(para_gamma_fine_tune, para_gamma_file, indent="")
-        para_gamma_file.close()
+        # with open(os.path.join(PATH, 'para_gamma_fine_tune.pkl'), "w") as f:
+        #     dump(para_gamma_fine_tune, f)
 
-        para_file = open(os.path.join(PATH, 'para_fine_tune.json'), "w")
-        json.dump(para_fine_tune, para_file, indent="")
-        para_file.close()
+        # with open(os.path.join(PATH, 'para_fine_tune.pkl'), "w") as f:
+        #     dump(para_fine_tune, f)
 
-        para_grad_file = open(os.path.join(PATH, 'para_grad_fine_tune.json'), "w")
-        json.dump(para_grad_fine_tune, para_grad_file, indent="")
-        para_grad_file.close()
+        # with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "w") as f:
+        #     dump(para_grad_fine_tune, f)
 
-        performance_file = open(os.path.join(PATH, 'performance_fine_tune.json'), "w")
-        json.dump(performance_fine_tune, performance_file, indent="")
-        performance_file.close()
+        with open(os.path.join(PATH, 'performance_fine_tune.pkl'), "w") as f:
+            dump(performance_fine_tune, f)
 
-        var_gamma_file = open(os.path.join(PATH, 'var_gamma_out_fine_tune.json'), "w")
-        json.dump(var_gamma_out_fine_tune, var_gamma_file, indent="")
-        var_gamma_file.close()
+        # with open(os.path.join(PATH, 'var_gamma_out_fine_tune.pkl'), "w") as f:
+        #     dump(var_gamma_out_fine_tune, f)
 
-        num_gamma_file = open(os.path.join(PATH, 'num_selected_out_fine_tune.json'), "w")
-        json.dump(num_gamma_out_fine_tune, num_gamma_file, indent="")
-        num_gamma_file.close()
+        # with open(os.path.join(PATH, 'num_selected_out_fine_tune.pkl'), "w") as f:
+        #     dump(num_gamma_out_fine_tune, f)
 
-        var_gamma_file = open(os.path.join(PATH, 'var_gamma_treat_fine_tune.json'), "w")
-        json.dump(var_gamma_treat_fine_tune, var_gamma_file, indent="")
-        var_gamma_file.close()
+        # with open(os.path.join(PATH, 'var_gamma_treat_fine_tune.pkl'), "w") as f:
+        #     dump(var_gamma_treat_fine_tune, f)
 
-        num_gamma_file = open(os.path.join(PATH, 'num_selected_treat_fine_tune.json'), "w")
-        json.dump(num_gamma_treat_fine_tune, num_gamma_file, indent="")
-        num_gamma_file.close()
+        # with open(os.path.join(PATH, 'num_selected_treat_fine_tune.pkl'), "w") as f:
+        #     dump(num_gamma_treat_fine_tune, f)
 
         # save training results for this run
         out_train_loss_list[prune_seed] = performance_fine_tune['out_train_loss'][-1]
@@ -358,8 +339,8 @@ def main():
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
             for y, treat, x in val_data:
-                pred, prop_score = net.forward(x, treat, temperature)
-                counter_fact, _ = net.forward(x, 1 - treat, temperature)
+                pred, prop_score = net.forward(x, treat)
+                counter_fact, _ = net.forward(x, 1 - treat)
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
                 pred_resid = torch.flatten(y - pred)

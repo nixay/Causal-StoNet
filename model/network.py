@@ -52,7 +52,7 @@ class StoNet_Causal(nn.Module):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def forward(self, x, treat, temperature=1):
+    def forward(self, x, treat):
         if self.prune_flag == 1:
             for name, para in self.named_parameters():
                 para.data[self.mask[name]] = 0
@@ -76,7 +76,7 @@ class StoNet_Causal(nn.Module):
         self.prune_flag = 0
         self.mask = None
 
-    def likelihood(self, forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list, y, temperature=1):
+    def likelihood(self, forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list, y, treat_loss_weight=1):
         if layer_index == 0:  # log_likelihood(Y_1|X)
             likelihood = -self.sse(forward_hidden, hidden_list[layer_index]) / (2 * sigma_list[
                 layer_index])
@@ -86,7 +86,7 @@ class StoNet_Causal(nn.Module):
 
             z_treat = z[:, self.treat_node]
             treat = hidden_list[layer_index][:, self.treat_node]
-            likelihood_treat = -self.treat_loss(z_treat, treat)*temperature
+            likelihood_treat = -self.treat_loss(z_treat, treat) * treat_loss_weight
 
             if isinstance(self.treat_node, (list, tuple, np.ndarray)):
                 lower = self.treat_node[0]
@@ -114,7 +114,7 @@ class StoNet_Causal(nn.Module):
                                    hidden_list[layer_index]) / (2 * sigma_list[layer_index])
         return likelihood
 
-    def backward_imputation(self, mh_step, impute_lrs, alpha, outcome_loss, sigma_list, x, treat, y, temperature=1):
+    def backward_imputation(self, mh_step, impute_lrs, alpha, outcome_loss, sigma_list, x, treat, y, treat_loss_weight=1):
         # initialize momentum term and hidden units
         hidden_list, momentum_list = [], []
         hidden_list.append(self.module_list[0](x).detach())
@@ -135,9 +135,9 @@ class StoNet_Causal(nn.Module):
                 hidden_list[layer_index].grad = None
 
                 hidden_likelihood1 = self.likelihood(forward_hidden, hidden_list, layer_index + 1, outcome_loss, sigma_list,
-                                                     y, temperature)
+                                                     y, treat_loss_weight)
                 hidden_likelihood2 = self.likelihood(forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list,
-                                                     y, temperature)
+                                                     y, treat_loss_weight)
 
                 hidden_likelihood1.backward()
                 hidden_likelihood2.backward()

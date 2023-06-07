@@ -16,8 +16,8 @@ args = parser.parse_args()
 model_seed = args.seed
 np.random.seed(model_seed)
 # network configure
-common_args = dict(activation='tanh', solver='sgd', alpha=0, batch_size=200, learning_rate='invscaling', max_iter=10000,
-                   early_stopping=True, random_state=model_seed)
+common_args = dict(activation='tanh', solver='sgd', alpha=0, learning_rate='invscaling', learning_rate_init=1e-5,
+                   power_t=0.8, max_iter=5000, early_stopping=True, random_state=model_seed)
 treatment_model = MLPClassifier(hidden_layer_sizes=(128,), **common_args)
 outcome_model = MLPClassifier(hidden_layer_sizes=(128, 32, 8), **common_args)
 
@@ -29,10 +29,15 @@ std_dr, std_r, std_x = np.zeros(2), np.zeros(2), np.zeros(2)
 cate_dr, cate_r, cate_x = [], [], []
 
 # DR-Learner
+treat_fit = treatment_model.fit(x, treat)
+prop = treat_fit.predict_proba(x)
+treatment = np.unique(treat)
+propensity = {treatment[0]: prop[:, 0], treatment[1]: prop[:, 1]}
+
 learner_dr = BaseDRLearner(control_outcome_learner=outcome_model, treatment_outcome_learner=outcome_model,
                            treatment_effect_learner=LinearRegression(), control_name=2)
-learner_dr.fit(x, treat, y)
-cate_dr = learner_dr.predict(X=x, treatment=treat, y=y)
+learner_dr.fit(X=x, treatment=treat, y=y, p=propensity, seed=model_seed)
+cate_dr = learner_dr.predict(X=x, treatment=treat, y=y, p=propensity)
 ate_dr = cate_dr.mean(axis=0)
 
 # to get the standard deviation of averaged ATE for each cross validation
@@ -55,20 +60,26 @@ for ifold in range(3):
     treat_train, treat_val = treat[train_idx], treat[val_idx]
     x_train, x_val = x[train_idx], x[val_idx]
 
-    # R-Learner
+    treat_fit = treatment_model.fit(x_train, treat_train)
+    prop_fit = treat_fit.predict_proba(x_train)
+    p_fit = {treatment[0]: prop_fit[:, 0], treatment[1]: prop_fit[:, 1]}
+    prop_predict = treat_fit.predict_proba(x_val)
+    p_predict = {treatment[0]: prop_predict[:, 0], treatment[1]: prop_predict[:, 1]}
+
+    print("R-Learner")
     learner_r = BaseRLearner(outcome_learner=outcome_model, effect_learner=LinearRegression(),
                              propensity_learner=treatment_model, control_name=2, n_fold=2, random_state=model_seed)
-    learner_r.fit(x_train, treat_train, y_train)
-    cate = learner_r.predict(x_val)
+    learner_r.fit(X=x_train, treatment=treat_train, y=y_train, p=p_fit)
+    cate = learner_r.predict(X=x_val, p=p_predict)
     cate_r.append(cate)
     ates_r[:, ifold] = cate.mean(axis=0)
 
-    # X-Learner
+    print("X-Learner")
     learner_x = BaseXLearner(control_outcome_learner=outcome_model, treatment_outcome_learner=outcome_model,
                              control_effect_learner=LinearRegression(), treatment_effect_learner=LinearRegression(),
                              control_name=2)
-    learner_x.fit(x_train, treat_train, y_train)
-    cate = learner_x.predict(x_val, treat_val, y_val)
+    learner_x.fit(X=x_train, treatment=treat_train, y=y_train, p=p_fit)
+    cate = learner_x.predict(X=x_val, treatment=treat_val, y=y_val, p=p_predict)
     cate_x.append(cate)
     ates_x[:, ifold] = cate.mean(axis=0)
 
@@ -90,9 +101,9 @@ cate_result = dict(dr=cate_dr, r=cate_r, x=cate_x)
 
 # save the results to json file
 
-ate_file = open('./benchmark/bench_tcga_ate.json', "w")
+ate_file = open('./benchmark/bench_tcga_ate' + str(model_seed) + '.json', "w")
 json.dump(ate_result, ate_file, indent="")
 ate_file.close()
 
-with open('./benchmark/bench_tcga_cate.pkl', 'wb') as f:
+with open('./benchmark/bench_tcga_cate' + str(model_seed) + '.pkl', 'wb') as f:
     pickle.dump(cate_result, f)
