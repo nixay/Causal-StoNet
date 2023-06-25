@@ -192,13 +192,13 @@ class StoNet_Causal(nn.Module):
         hidden_list, momentum_list = [], []
         hidden_list.append(self.module_list[0](x).detach())
         momentum_list.append(torch.zeros_like(hidden_list[-1]))
-        obs_ind = 1 - miss_ind
         for layer_index in range(1, self.num_hidden):
             hidden_list.append(self.module_list[layer_index](hidden_list[-1]).detach())
             momentum_list.append(torch.zeros_like(hidden_list[-1]))
             if layer_index == self.treat_layer:
                 hidden_list[-1][:, self.treat_node] = treat
         if self.miss_pattern == 'mnar':
+            obs_ind = 1 - miss_ind
             hidden_list[self.treat_layer+1][:, self.obs_ind_node] = obs_ind  # since obs_ind has no connection to later layers
 
         for i in range(self.num_hidden):
@@ -207,10 +207,11 @@ class StoNet_Causal(nn.Module):
             forward_hidden = torch.clone(hidden_list[0])
 
         # initialize missing values
-        if torch.max(miss_ind) > 0:
-            x_miss = torch.clone(x[:, self.miss_col].detach())
-            x_miss_momentum = torch.zeros_like(x_miss)
-            x_miss.requires_grad = True
+        if self.miss_col is not None:
+            if torch.max(miss_ind) > 0:
+                x_miss = torch.clone(x[:, self.miss_col].detach())
+                x_miss_momentum = torch.zeros_like(x_miss)
+                x_miss.requires_grad = True
 
         # backward imputation by SGHMC
         for step in range(mh_step):
@@ -241,20 +242,21 @@ class StoNet_Causal(nn.Module):
 
                     hidden_list[layer_index].data += lr * momentum_list[layer_index]
             # missing value imputation
-            if torch.max(miss_ind) > 0:
-                x_miss.grad = None
-                miss_likelihood1 = self.likelihood_miss(x_miss, miss_cond_mean, miss_cond_var)
-                miss_likelihood2 = self.likelihood_latent(forward_hidden, hidden_list, 0, outcome_loss, sigma_list,
-                                                     y, treat_loss_weight)
-                miss_likelihood1.backward()
-                miss_likelihood2.backward()
-                with torch.no_grad():
-                    x_miss_momentum = (1 - alpha) * x_miss_momentum + miss_lr * x_miss.grad + \
-                                      torch.FloatTensor(x_miss.shape).to(self.device).normal_().mul(np.sqrt(2*alpha))
-                    x_miss_momentum = x_miss_momentum * miss_ind
-                    x[:, self.miss_col] += miss_lr * x_miss_momentum
+            if self.miss_col is not None:
+                if torch.max(miss_ind) > 0:
+                    x_miss.grad = None
+                    miss_likelihood1 = self.likelihood_miss(x_miss, miss_cond_mean, miss_cond_var)
+                    miss_likelihood2 = self.likelihood_latent(forward_hidden, hidden_list, 0, outcome_loss, sigma_list,
+                                                         y, treat_loss_weight)
+                    miss_likelihood1.backward()
+                    miss_likelihood2.backward()
+                    with torch.no_grad():
+                        x_miss_momentum = (1 - alpha) * x_miss_momentum + miss_lr * x_miss.grad + \
+                                          torch.FloatTensor(x_miss.shape).to(self.device).normal_().mul(np.sqrt(2*alpha))
+                        x_miss_momentum = x_miss_momentum * miss_ind
+                        x[:, self.miss_col] += miss_lr * x_miss_momentum
 
-                    # update the hidden nodes in the first hidden layer after missing value imputation
-                    forward_hidden = torch.clone(self.module_list[0](x).detach())
+                        # update the hidden nodes in the first hidden layer after missing value imputation
+                        forward_hidden = torch.clone(self.module_list[0](x).detach())
 
             return hidden_list
