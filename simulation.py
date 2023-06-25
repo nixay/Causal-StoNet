@@ -1,6 +1,6 @@
 from model.network import StoNet_Causal
 from model.training import training
-from data import SimData_Causal, SimData_Causal_Ind
+from data import SimData_Causal
 from torch.utils.data import DataLoader, random_split
 import torch
 import numpy as np
@@ -27,7 +27,7 @@ parser.add_argument('--batch_size', default=100, type=int, help='batch size')
 
 # Parameter for StoNet
 # model
-parser.add_argument('--layer', default=3, type=int, help='number of hidden layer (not including the treatment layer')
+parser.add_argument('--layer', default=3, type=int, help='number of hidden layers')
 parser.add_argument('--unit', default=[6, 4, 3], type=int, nargs='+', help='number of hidden unit in each layer')
 parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nargs='+',
                     help='variance of each layer for the model')
@@ -75,10 +75,7 @@ def main():
     val_size = args.val_size
     data_generate_args = dict(input_size=args.input_dim, seed=data_seed, data_size=train_size+val_size)
 
-    if data_name == "cor":
-        data = SimData_Causal(**data_generate_args)
-    else:
-        data = SimData_Causal_Ind(**data_generate_args)
+    data = SimData_Causal(**data_generate_args)
 
     train_set, val_set = random_split(data, [train_size, val_size],
                                       generator=torch.Generator().manual_seed(args.partition_seed))
@@ -228,6 +225,7 @@ def main():
         for name, para in net.named_parameters():
             user_mask[name] = para.abs() < threshold
         net.set_prune(user_mask)
+        net.prune_masked_para()
 
         # save model training results
         num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs-1]
