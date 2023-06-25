@@ -25,7 +25,7 @@ parser.add_argument('--batch_size', default=100, type=int, help='batch size')
 # Parameter for StoNet
 # model
 parser.add_argument('--layer', default=3, type=int, help='number of hidden layers')
-parser.add_argument('--unit', default=[8, 6, 4], type=int, nargs='+', help='number of hidden unit in each layer')
+parser.add_argument('--unit', default=[8, 6, 5], type=int, nargs='+', help='number of hidden unit in each layer')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
 parser.add_argument('--treat_node', default=1, type=int, help='the position of the treatment variable')
 parser.add_argument('--miss_col', default=[0, 3], type=int, nargs='+', help='the idx of covaraites that have missing values')
