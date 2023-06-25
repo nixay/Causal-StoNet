@@ -7,7 +7,8 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
              sigma_list, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
-             impute_lr_decay, treat_loss_weight, scalar_y=1, outcome_cat=False, CE_weight=None):
+             impute_lr_decay, treat_loss_weight, scalar_y=1, outcome_cat=False, CE_weight=None, miss_cond_mean=None,
+             miss_cond_var=None, miss_lr=None):
 
     """
     train the network
@@ -51,7 +52,12 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
     CE_weight: None or torch tensor:
         when the outcome variable is categorical, the weight assigned to each class.
         can be used to deal with unbalanced dataset.
-
+    miss_cond_mean: list of floats
+        the conditional mean of missing covaraites
+    miss_cond_var: list of floats
+        the conditional variance of missing covariates
+    miss_lr: float
+        learning rate for imputation of missing covariates
 
     output:
     para_path: dictionary
@@ -157,10 +163,16 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         # for i in range(net.num_hidden):
         #     print("para_lr", optimizer_list[i].param_groups[0]['lr'])
 
-        for y, treat, x in train_data:
+        for y, treat, x, *rest in train_data:
+            backward_imputation_args = dict(mh_step=mh_step, impute_lrs=step_impute_lrs, alpha=alpha,
+                                            outcome_loss=out_loss_sum, sigma_list=sigma_list, x=x, treat=treat,
+                                            y=y, treat_loss_weight=treat_loss_weight)
+            if net.miss_col is not None:
+                miss_ind = rest[0]
+                backward_imputation_args.update(miss_cond_mean=miss_cond_mean, miss_cond_var=miss_cond_var,
+                                    miss_lr=miss_lr, miss_ind=miss_ind)
             # backward imputation
-            hidden_list = net.backward_imputation(mh_step, step_impute_lrs, alpha, out_loss_sum, sigma_list, x,
-                                                  treat, y, treat_loss_weight)
+            hidden_list = net.backward_imputation(**backward_imputation_args)
 
             # parameter update
             for para in net.parameters():
@@ -173,32 +185,42 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                     prior_grad = temp.div(len(train_data)*batch_size)
                     para.grad = prior_grad
 
+            forward_hidden = net.module_list[0](x)
             for layer_index in range(net.num_hidden + 1):
-                forward_hidden = net.module_list[0](x)
-                likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
-                                            treat_loss_weight) / batch_size
+                likelihood = net.likelihood_latent(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
+                                                   treat_loss_weight) / batch_size
                 optimizer = optimizer_list[layer_index]
                 likelihood.backward()
+
+                if net.miss_pattern  == 'mnar':
+                    if layer_index == net.treat_node + 2:
+                        net.mnar_masked_grad()
+
+                if net.prune_flag == 1:
+                    net.prune_masked_grad()
+
                 # gradient clipping on hidden layers
                 if layer_index < net.num_hidden + 1:
                     torch.nn.utils.clip_grad_norm_(net.module_list[layer_index].parameters(),
                                                max_norm=1/(2*sigma_list[layer_index]), norm_type=2)
                 optimizer.step()
 
+                if layer_index == 0:  # update the value of forward_hidden after para update for the first layer
+                    forward_hidden = net.module_list[0](x)
+
                 if epoch == epochs-1:
                     with torch.no_grad():
                         # need to recalculate likelihood afater the last parameter update
                         # make sure that treat loss have the same weight as outcome loss
-                        forward_hidden = net.module_list[0](x)
-                        likelihood = net.likelihood(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
-                                                    treat_loss_weight)
+                        likelihood = net.likelihood_latent(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
+                                                           treat_loss_weight)
                         hidden_likelihood[layer_index] += likelihood
 
         # calculate training performance
         out_train_loss, out_train_correct, treat_train_loss, treat_train_correct = 0, 0, 0, 0
         with torch.no_grad():
-            for y, treat, x in train_data:
-                pred, ps = net.forward(x, treat, treat_loss_weight)
+            for y, treat, x, *rest in train_data:
+                pred, ps = net.forward(x, treat)
                 out_train_loss += out_loss(pred, y).item()
                 treat_train_loss += treat_loss(ps, treat).item()  # note that for BCELoss the input has to be probability
                 if isinstance(net.treat_node, (list, tuple, np.ndarray)):
@@ -228,7 +250,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         # calculate validation performance
         out_val_loss, out_val_correct, treat_val_loss, treat_val_correct = 0, 0, 0, 0
         with torch.no_grad():
-            for y, treat, x in val_data:
+            for y, treat, x, *rest in val_data:
                 pred, ps = net.forward(x, treat)
                 out_val_loss += out_loss(pred, y).item()
                 treat_val_loss += treat_loss(ps, treat).item()
