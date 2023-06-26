@@ -158,10 +158,13 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 step_impute_lrs[i] = impute_lrs[i]/(1+impute_lrs[i]*epoch**impute_lr_decay)
                 optimizer_list[i].param_groups[0]['lr'] = init_para_lrs[i]/(1+init_para_lrs[i]*epoch**para_lr_decay)
             optimizer_list[-1].param_groups[0]['lr'] = init_para_lrs[-1]/(1+init_para_lrs[-1]*epoch**para_lr_decay)
+            if miss_lr is not None:
+                miss_lr /= (1+miss_lr*epoch**impute_lr_decay)
 
         # print("impute_lrs", step_impute_lrs)
         # for i in range(net.num_hidden):
         #     print("para_lr", optimizer_list[i].param_groups[0]['lr'])
+        # print("miss_lr", miss_lr)
 
         for y, treat, x, *rest in train_data:
             backward_imputation_args = dict(mh_step=mh_step, impute_lrs=step_impute_lrs, alpha=alpha,
@@ -331,6 +334,6 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
     else:
         output = dict(para_path=para_path, para_grad_path=para_grad_path, para_gamma_path=para_gamma_path,
                       input_gamma_path=input_gamma_path, performance=performance,
-                      impute_lrs=step_impute_lrs, likelihoods=hidden_likelihood)
+                      impute_lrs=step_impute_lrs, miss_lr = miss_lr, likelihoods=hidden_likelihood)
 
     return output
