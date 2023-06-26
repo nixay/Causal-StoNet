@@ -116,7 +116,7 @@ class StoNet_Causal(nn.Module):
     def likelihood_miss(self, x_miss, cond_mean, cond_var):
         likelihood = 0
         for i in range(len(self.miss_col)):
-            likelihood -= self.sse(cond_mean[i].expand(x_miss[:, i].size()), x_miss[:, i])/(2*cond_var[i])
+            likelihood -= self.sse(x_miss[:, i], cond_mean[i].expand(x_miss[:, i].size()))/(2*cond_var[i])
         return likelihood
 
     def likelihood_latent(self, forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list, y, treat_loss_weight=1):
