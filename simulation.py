@@ -73,11 +73,11 @@ def main():
     data_seed = args.data_seed
     train_size = args.train_size
     val_size = args.val_size
-    data_generate_args = dict(input_size=args.input_dim, seed=data_seed, data_size=train_size+val_size)
+    data_generate_args = dict(input_size=args.input_dim, seed=data_seed, data_size=train_size+val_size*2)
 
     data = SimData_Causal(**data_generate_args)
 
-    train_set, val_set = random_split(data, [train_size, val_size],
+    train_set, val_set, test_set= random_split(data, [train_size, val_size, val_size],
                                       generator=torch.Generator().manual_seed(args.partition_seed))
 
     # load training data and validation data
@@ -85,6 +85,7 @@ def main():
     batch_size = args.batch_size
     train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    test_data = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
     # network setup
     net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=data.x[0].size(dim=0),
@@ -133,8 +134,7 @@ def main():
     treat_val_loss_list = np.zeros([num_seed])
     treat_train_acc_list = np.zeros([num_seed])
     treat_val_acc_list = np.zeros([num_seed])
-    ate_list = np.zeros([num_seed+1])
-    ate_list[-1] = data.true_ate()
+    ate_list = np.zeros([num_seed])
 
     # path to save the result
     base_path = os.path.join('.', 'simulation', 'result', data_name, str(data_seed))
@@ -190,16 +190,16 @@ def main():
         # para_gamma_pretrain = output_pretrain["para_gamma_path"]
         performance_pretrain = output_pretrain["performance"]
 
-        # with open(os.path.join(PATH, 'para_gamma_pretrain.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_gamma_pretrain.pkl'), "wb") as f:
         #     dump(para_gamma_pretrain, f)
 
-        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "wb") as f:
         #     dump(para_pretrain, f)
 
-        # with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "wb") as f:
         #     dump(para_grad_pretrain, f)
 
-        with open(os.path.join(PATH, 'performance_pretrain.pkl'), "w") as f:
+        with open(os.path.join(PATH, 'performance_pretrain.pkl'), "wb") as f:
             dump(performance_pretrain, f)
 
         # train
@@ -245,28 +245,28 @@ def main():
         f.write(temp_str)
         f.close()
 
-        # with open(os.path.join(PATH, 'para_gamma_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_gamma_train.pkl'), "wb") as f:
         #     dump(para_gamma_train, f)
 
-        # with open(os.path.join(PATH, 'para_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_train.pkl'), "wb") as f:
         #     dump(para_train, f)
 
-        # with open(os.path.join(PATH, 'para_grad_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_grad_train.pkl'), "wb") as f:
         #     dump(para_grad_train, f)
 
-        with open(os.path.join(PATH, 'performance_train.pkl'), "w") as f:
+        with open(os.path.join(PATH, 'performance_train.pkl'), "wb") as f:
             dump(performance_train, f)
 
-        # with open(os.path.join(PATH, 'var_gamma_out_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'var_gamma_out_train.pkl'), "wb") as f:
         #     dump(var_gamma_out_train, f)
 
-        # with open(os.path.join(PATH, 'num_selected_out_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'num_selected_out_train.pkl'), "wb") as f:
         #     dump(num_gamma_out_train, f)
 
-        # with open(os.path.join(PATH, 'var_gamma_treat_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'var_gamma_treat_train.pkl'), "wb") as f:
         #     dump(var_gamma_treat_train, f)
 
-        # with open(os.path.join(PATH, 'num_selected_treat_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'num_selected_treat_train.pkl'), "wb") as f:
         #     dump(num_gamma_treat_train, f)
 
         # refine non-zero network parameters
@@ -284,28 +284,28 @@ def main():
         likelihoods = output_fine_tune["likelihoods"]
 
         # save fine tuning results
-        # with open(os.path.join(PATH, 'para_gamma_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_gamma_fine_tune.pkl'), "wb") as f:
         #     dump(para_gamma_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'para_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
         #     dump(para_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "wb") as f:
         #     dump(para_grad_fine_tune, f)
 
-        with open(os.path.join(PATH, 'performance_fine_tune.pkl'), "w") as f:
+        with open(os.path.join(PATH, 'performance_fine_tune.pkl'), "wb") as f:
             dump(performance_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'var_gamma_out_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'var_gamma_out_fine_tune.pkl'), "wb") as f:
         #     dump(var_gamma_out_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'num_selected_out_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'num_selected_out_fine_tune.pkl'), "wb") as f:
         #     dump(num_gamma_out_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'var_gamma_treat_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'var_gamma_treat_fine_tune.pkl'), "wb") as f:
         #     dump(var_gamma_treat_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'num_selected_treat_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'num_selected_treat_fine_tune.pkl'), "wb") as f:
         #     dump(num_gamma_treat_fine_tune, f)
 
         # save training results for this run
@@ -324,7 +324,7 @@ def main():
         with torch.no_grad():
             num_non_zero_element = 0
             for name, para in net.named_parameters():
-                num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
+                num_non_zero_element = num_non_zero_element + para.numel() - net.mask_prune[name].sum()
             dim_list[prune_seed] = num_non_zero_element
 
             BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
@@ -336,7 +336,7 @@ def main():
         # calculate doubly-robust estimator of ate
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
-            for y, treat, x in val_data:
+            for y, treat, x, _ in test_data:
                 pred, prop_score = net.forward(x, treat)
                 counter_fact, _ = net.forward(x, 1 - treat)
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)

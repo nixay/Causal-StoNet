@@ -54,10 +54,9 @@ class StoNet_Causal(nn.Module):
         self.prune_flag = 0
         self.mask_prune = None
 
-        self.mask_mnar = torch.ones_like(self.module_list[self.treat_layer+2][1].weight)
-        self.mask_mnar[:, self.obs_ind_node] = 0
-
         if self.miss_pattern == 'mnar':
+            self.mask_mnar = torch.ones_like(self.module_list[self.treat_layer+2][1].weight)
+            self.mask_mnar[:, self.obs_ind_node] = 0
             self.mnar_masked_para()
 
         self.sse = nn.MSELoss(reduction='sum')
@@ -149,41 +148,41 @@ class StoNet_Causal(nn.Module):
 
             likelihood = likelihood_treat + likelihood_rest_1 + likelihood_rest_2
 
-        elif layer_index == self.treat_layer+1:
-            if self.miss_pattern == 'mnar':
-                m = self.module_list[layer_index](hidden_list[layer_index - 1])
-
-                m_obs = m[:, self.obs_ind_node]
-                obs = hidden_list[layer_index][:, self.obs_ind_node]
-                likelihood_obs = -self.obs_ind_loss(m_obs, obs)
-
-                if isinstance(self.obs_ind_node, (list, tuple, np.ndarray)):
-                    lower = self.obs_ind_node[0]
-                    upper = self.obs_ind_node[-1]
-                else:
-                    lower = self.obs_ind_node
-                    upper = self.obs_ind_node
-
-                m_rest_1 = m[:, 0:lower]
-                temp1 = hidden_list[layer_index][:, 0:lower]
-                likelihood_obs_rest_1 = -self.sse(m_rest_1, temp1)/(2 * sigma_list[layer_index])
-
-                m_rest_2 = m[:, upper + 1:]
-                temp2 = hidden_list[layer_index][:, upper + 1:]
-                likelihood_obs_rest_2 = -self.sse(m_rest_2, temp2)/(2 * sigma_list[layer_index])
-
-                likelihood = likelihood_obs + likelihood_obs_rest_1 + likelihood_obs_rest_2
-            else:
-                likelihood = -self.sse(self.module_list[layer_index](hidden_list[layer_index - 1]),
-                                       hidden_list[layer_index]) / (2 * sigma_list[layer_index])
-
         elif layer_index == self.num_hidden:  # log_likelihood(Y|Y_h)
             likelihood = -outcome_loss(self.module_list[layer_index](hidden_list[layer_index - 1]), y) / (
                     2 * sigma_list[self.num_hidden])
 
         else:  # log_likelihood(Y_i|Y_i-1)
-            likelihood = -self.sse(self.module_list[layer_index](hidden_list[layer_index - 1]),
-                                   hidden_list[layer_index]) / (2 * sigma_list[layer_index])
+            if self.miss_pattern == 'mnar':
+                if layer_index == self.treat_layer+1:
+                    m = self.module_list[layer_index](hidden_list[layer_index - 1])
+
+                    m_obs = m[:, self.obs_ind_node]
+                    obs = hidden_list[layer_index][:, self.obs_ind_node]
+                    likelihood_obs = -self.obs_ind_loss(m_obs, obs)
+
+                    if isinstance(self.obs_ind_node, (list, tuple, np.ndarray)):
+                        lower = self.obs_ind_node[0]
+                        upper = self.obs_ind_node[-1]
+                    else:
+                        lower = self.obs_ind_node
+                        upper = self.obs_ind_node
+
+                    m_rest_1 = m[:, 0:lower]
+                    temp1 = hidden_list[layer_index][:, 0:lower]
+                    likelihood_obs_rest_1 = -self.sse(m_rest_1, temp1)/(2 * sigma_list[layer_index])
+
+                    m_rest_2 = m[:, upper + 1:]
+                    temp2 = hidden_list[layer_index][:, upper + 1:]
+                    likelihood_obs_rest_2 = -self.sse(m_rest_2, temp2)/(2 * sigma_list[layer_index])
+
+                    likelihood = likelihood_obs + likelihood_obs_rest_1 + likelihood_obs_rest_2
+                else:
+                    likelihood = -self.sse(self.module_list[layer_index](hidden_list[layer_index - 1]),
+                                       hidden_list[layer_index]) / (2 * sigma_list[layer_index])
+            else:
+                likelihood = -self.sse(self.module_list[layer_index](hidden_list[layer_index - 1]),
+                                       hidden_list[layer_index]) / (2 * sigma_list[layer_index])
         return likelihood
 
     def backward_imputation(self, mh_step, impute_lrs, alpha, outcome_loss, sigma_list, x, treat, y, treat_loss_weight=1,

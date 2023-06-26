@@ -183,16 +183,16 @@ def main():
         # para_gamma_pretrain = output_pretrain["para_gamma_path"]
         performance_pretrain = output_pretrain["performance"]
 
-        # with open(os.path.join(PATH, 'para_gamma_pretrain.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_gamma_pretrain.pkl'), "wb") as f:
         #     dump(para_gamma_pretrain, f)
 
-        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "wb") as f:
         #     dump(para_pretrain, f)
 
-        # with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "wb") as f:
         #     dump(para_grad_pretrain, f)
 
-        with open(os.path.join(PATH, 'performance_pretrain.pkl'), "w") as f:
+        with open(os.path.join(PATH, 'performance_pretrain.pkl'), "wb") as f:
             dump(performance_pretrain, f)
 
         # train
@@ -218,6 +218,7 @@ def main():
         for name, para in net.named_parameters():
             user_mask[name] = para.abs() < threshold
         net.set_prune(user_mask)
+        net.prune_masked_para()
 
         # save model training results
         num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs-1]
@@ -332,7 +333,7 @@ def main():
         with torch.no_grad():
             num_non_zero_element = 0
             for name, para in net.named_parameters():
-                num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
+                num_non_zero_element = num_non_zero_element + para.numel() - net.mask_prune[name].sum()
             dim_list[prune_seed] = num_non_zero_element
 
             BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()

@@ -190,10 +190,10 @@ def main():
         # para_pretrain = output_pretrain["para_path"]
         performance_pretrain = output_pretrain["performance"]
 
-        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "wb") as f:
         #     dump(para_pretrain, f)
 
-        with open(os.path.join(PATH, 'performance_pretrain.pkl'), "w") as f:
+        with open(os.path.join(PATH, 'performance_pretrain.pkl'), "wb") as f:
             dump(performance_pretrain, f)
 
         # train
@@ -215,15 +215,16 @@ def main():
         for name, para in net.named_parameters():
             user_mask[name] = para.abs() < threshold
         net.set_prune(user_mask)
+        net.prune_masked_para()
 
         # save training result
-        with open(os.path.join(PATH, 'performance_train1.pkl'), "w") as f:
+        with open(os.path.join(PATH, 'performance_train1.pkl'), "wb") as f:
             dump(performance_train1, f)
 
-        # with open(os.path.join(PATH, 'num_selected_out_train1.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'num_selected_out_train1.pkl'), "wb") as f:
         #     dump(num_gamma_out_train1, f)
 
-        # with open(os.path.join(PATH, 'num_selected_treat_train1.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'num_selected_treat_train1.pkl'), "wb") as f:
         #     dump(num_gamma_treat_train1, f)
 
         print("Train 2")
@@ -246,6 +247,7 @@ def main():
         for name, para in net.named_parameters():
             user_mask[name] = para.abs() < threshold
         net.set_prune(user_mask)
+        net.prune_masked_para()
 
         # save model training results
         num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs*2-1]
@@ -265,22 +267,22 @@ def main():
         f.write(temp_str)
         f.close()
 
-        # with open(os.path.join(PATH, 'para_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_train.pkl'), "wb") as f:
         #     dump(para_train, f)
 
-        with open(os.path.join(PATH, 'performance_train.pkl'), "w") as f:
+        with open(os.path.join(PATH, 'performance_train.pkl'), "wb") as f:
             dump(performance_train, f)
 
-        # with open(os.path.join(PATH, 'var_gamma_out_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'var_gamma_out_train.pkl'), "wb") as f:
         #     dump(var_gamma_out_train, f)
 
-        # with open(os.path.join(PATH, 'num_selected_out_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'num_selected_out_train.pkl'), "wb") as f:
         #     dump(num_gamma_out_train, f)
 
-        # with open(os.path.join(PATH, 'var_gamma_treat_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'var_gamma_treat_train.pkl'), "wb") as f:
         #     dump(var_gamma_treat_train, f)
 
-        # with open(os.path.join(PATH, 'num_selected_treat_train.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'num_selected_treat_train.pkl'), "wb") as f:
         #     dump(num_gamma_treat_train, f)
 
         # refine non-zero network parameters
@@ -296,22 +298,22 @@ def main():
         likelihoods = output_fine_tune["likelihoods"]
 
         # save refining results
-        # with open(os.path.join(PATH, 'para_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
         #     dump(para_fine_tune, f)
 
-        with open(os.path.join(PATH, 'performance_fine_tune.pkl'), "w") as f:
+        with open(os.path.join(PATH, 'performance_fine_tune.pkl'), "wb") as f:
             dump(performance_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'var_gamma_out_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'var_gamma_out_fine_tune.pkl'), "wb") as f:
         #     dump(var_gamma_out_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'num_selected_out_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'num_selected_out_fine_tune.pkl'), "wb") as f:
         #     dump(num_gamma_out_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'var_gamma_treat_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'var_gamma_treat_fine_tune.pkl'), "wb") as f:
         #     dump(var_gamma_treat_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'num_selected_treat_fine_tune.pkl'), "w") as f:
+        # with open(os.path.join(PATH, 'num_selected_treat_fine_tune.pkl'), "wb") as f:
         #     dump(num_gamma_treat_fine_tune, f)
 
         # save training results for the final run
@@ -331,7 +333,7 @@ def main():
         with torch.no_grad():
             num_non_zero_element = 0
             for name, para in net.named_parameters():
-                num_non_zero_element = num_non_zero_element + para.numel() - net.mask[name].sum()
+                num_non_zero_element = num_non_zero_element + para.numel() - net.mask_prune[name].sum()
             dim_list[prune_seed] = num_non_zero_element
 
             BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
