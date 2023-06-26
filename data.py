@@ -493,6 +493,8 @@ class SimData_Missing_test(Dataset):
         x = np.loadtxt(os.path.join('./raw_data/sim_missing', csv_name), delimiter=",", skiprows=1)
         self.data_size = x.__len__()
 
+        np.random.seed(seed)
+        torch.manual_seed(seed)
         # nodes in the first hidden layer
         h11 = np.tanh(2*x[:, 0]+1*x[:, 3])
         h12 = np.tanh(-x[:, 0]-2*x[:, 4])
