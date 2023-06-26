@@ -109,7 +109,7 @@ def main():
     impute_lrs = args.impute_lr
     mh_step = args.mh_step
     sigma_list = args.sigma
-    impute_lr_miss = args.impute_lr_miss
+    miss_lr = args.impute_lr_miss
 
     # prior parameters
     prior_sigma_0 = args.sigma0
@@ -139,8 +139,8 @@ def main():
     # path to save the result
     base_path = os.path.join('.', 'sim_miss', 'result', miss_pattern, str(data_seed))
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(treat_loss_weight)
-    spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
-           str(prior_sigma_1) + '_' + str(lambda_n) + '_' + str(impute_lr_miss)
+    spec = str(miss_lr)+ '_' + str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
+           str(prior_sigma_1) + '_' + str(lambda_n)
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
     base_path = os.path.join(base_path, basic_spec, spec, decay_spec)
 
@@ -181,33 +181,34 @@ def main():
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
                           impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
                           treat_loss_weight=treat_loss_weight, miss_cond_mean=data.cond_mean,
-                          miss_cond_var=data.cond_var, miss_lr=impute_lr_miss)
+                          miss_cond_var=data.cond_var)
         # pretrain
         print("Pretrain")
         output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
-                                   impute_lrs=impute_lrs, **optim_args)
-        # para_pretrain = output_pretrain["para_path"]
-        # para_grad_pretrain = output_pretrain["para_grad_path"]
+                                   impute_lrs=impute_lrs, miss_lr=miss_lr, **optim_args)
+        para_pretrain = output_pretrain["para_path"]
+        para_grad_pretrain = output_pretrain["para_grad_path"]
         # para_gamma_pretrain = output_pretrain["para_gamma_path"]
         performance_pretrain = output_pretrain["performance"]
 
         # with open(os.path.join(PATH, 'para_gamma_pretrain.pkl'), "wb") as f:
         #     dump(para_gamma_pretrain, f)
 
-        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "wb") as f:
-        #     dump(para_pretrain, f)
+        with open(os.path.join(PATH, 'para_pretrain.pkl'), "wb") as f:
+            dump(para_pretrain, f)
 
-        # with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "wb") as f:
-        #     dump(para_grad_pretrain, f)
+        with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "wb") as f:
+            dump(para_grad_pretrain, f)
+
         with open(os.path.join(PATH, 'performance_pretrain.pkl'), "wb") as f:
             dump(performance_pretrain, f)
 
         # train
         print("Train")
         output_train = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train,
-                                impute_lrs=impute_lrs, **optim_args)
+                                impute_lrs=impute_lrs, miss_lr=miss_lr, **optim_args)
         para_train = output_train["para_path"]
-        # para_grad_train = output_train["para_grad_path"]
+        para_grad_train = output_train["para_grad_path"]
         # para_gamma_train = output_train["para_gamma_path"]
         var_gamma_out_train = output_train["input_gamma_path"]["var_selected_out"]
         num_gamma_out_train = output_train["input_gamma_path"]["num_selected_out"]
@@ -215,6 +216,7 @@ def main():
         num_gamma_treat_train = output_train["input_gamma_path"]["num_selected_treat"]
         performance_train = output_train["performance"]
         impute_lrs_fine_tune = output_train["impute_lrs"]
+        miss_lr_fine_tune = output_train["miss_lr"]
 
         # prune network parameters
         with torch.no_grad():
@@ -248,11 +250,11 @@ def main():
         # with open(os.path.join(PATH, 'para_gamma_train.pkl'), "wb") as f:
         #     dump(para_gamma_train, f)
 
-        # with open(os.path.join(PATH, 'para_train.pkl'), "wb") as f:
-        #     dump(para_train, f)
+        with open(os.path.join(PATH, 'para_train.pkl'), "wb") as f:
+            dump(para_train, f)
 
-        # with open(os.path.join(PATH, 'para_grad_train.pkl'), "wb") as f:
-        #     dump(para_grad_train, f)
+        with open(os.path.join(PATH, 'para_grad_train.pkl'), "wb") as f:
+            dump(para_grad_train, f)
 
         with open(os.path.join(PATH, 'performance_train.pkl'), "wb") as f:
             dump(performance_train, f)
@@ -272,9 +274,9 @@ def main():
         # refine non-zero network parameters
         print("Refine Weight")
         output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
-                                    impute_lrs=impute_lrs_fine_tune, **optim_args)
-        # para_fine_tune = output_fine_tune["para_path"]
-        # para_grad_fine_tune = output_fine_tune["para_grad_path"]
+                                    impute_lrs=impute_lrs_fine_tune, miss_lr=miss_lr_fine_tune, **optim_args)
+        para_fine_tune = output_fine_tune["para_path"]
+        para_grad_fine_tune = output_fine_tune["para_grad_path"]
         # para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
         # var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
         # num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
@@ -287,11 +289,11 @@ def main():
         # with open(os.path.join(PATH, 'para_gamma_fine_tune.pkl'), "wb") as f:
         #     dump(para_gamma_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
-        #     dump(para_fine_tune, f)
+        with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
+            dump(para_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "wb") as f:
-        #     dump(para_grad_fine_tune, f)
+        with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "wb") as f:
+            dump(para_grad_fine_tune, f)
 
         with open(os.path.join(PATH, 'performance_fine_tune.pkl'), "wb") as f:
             dump(performance_fine_tune, f)
