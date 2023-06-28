@@ -7,14 +7,6 @@ import torch
 import os
 
 
-# to-do:
-# Real dataset (twins): the GMM structure is unknown
-# In R: infer the GMM structure; how to check MAR or MNAR? what the output would be?
-# In Python:
-#       1. twins_MAR
-#       2. twins_MNAR
-#       3. data_preprocess: missing value detection for real dataset; separate missing data and observed data
-
 def true_ate(y, treat, y_count):
     ate = torch.mean(torch.flatten((y - y_count)) * (2*treat-1))
     return ate
@@ -484,58 +476,58 @@ class SimData_Missing(Dataset):
         self.cond_var = [cond_cov_x1, cond_cov_x4]
 
 
-class SimData_Missing_test(Dataset):
-    def __init__(self, seed):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # load covariates
-        csv_name = 'covariates_' + str(seed) + '.csv'
-        x = np.loadtxt(os.path.join('./raw_data/sim_missing', csv_name), delimiter=",", skiprows=1)
-        self.data_size = x.__len__()
-
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        # nodes in the first hidden layer
-        h11 = np.tanh(2*x[:, 0]+1*x[:, 3])
-        h12 = np.tanh(-x[:, 0]-2*x[:, 4])
-        h13 = np.tanh(2*x[:, 1]-2*x[:, 2])
-        h14 = np.tanh(-2*x[:, 3]+1*x[:, 4])
-
-        # nodes in the second hidden layer
-        h21 = np.tanh(-2*h11+h13)
-        h22 = h12-h13
-        h23 = np.tanh(h13-2*h14)
-
-        # generate treatment
-        prob = np.exp(h22)/(1 + np.exp(h22))
-        treat = bernoulli.rvs(p=prob)
-
-        # nodes in the third hidden layer
-        h31 = np.tanh(1*h21-2*treat)
-        h32 = np.tanh(-1*treat+2*h23)
-
-        # counterfactual nodes in the third hidden layer
-        h31_count = np.tanh(1*h21-2*(1-treat))
-        h32_count = np.tanh(-1*(1-treat)+2*h23)
-
-        # generate outcome variable
-        y = -4*h31+2*h32 + np.random.normal(0, 1)
-
-        # generate counterfactual outcome variable
-        y_count = -4*h31_count+2*h32_count + np.random.normal(0, 1)
-
-        self.x = torch.FloatTensor(x).to(self.device)
-        self.treat = torch.FloatTensor(treat).to(self.device)
-        self.y = torch.FloatTensor(y).reshape(self.data_size, 1).to(self.device)
-        self.y_count = torch.FloatTensor(y_count).reshape(self.data_size, 1).to(self.device)
-
-    def __len__(self):
-        return int(self.data_size)
-
-    def __getitem__(self, idx):
-        y = self.y[idx]
-        x = self.x[idx]
-        treat = self.treat[idx]
-        y_count = self.y_count[idx]
-        return y, treat, x, y_count
+# class SimData_Missing_test(Dataset):
+#     def __init__(self, seed):
+#         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#
+#         # load covariates
+#         csv_name = 'covariates_' + str(seed) + '.csv'
+#         x = np.loadtxt(os.path.join('./raw_data/sim_missing', csv_name), delimiter=",", skiprows=1)
+#         self.data_size = x.__len__()
+#
+#         np.random.seed(seed)
+#         torch.manual_seed(seed)
+#         # nodes in the first hidden layer
+#         h11 = np.tanh(2*x[:, 0]+1*x[:, 3])
+#         h12 = np.tanh(-x[:, 0]-2*x[:, 4])
+#         h13 = np.tanh(2*x[:, 1]-2*x[:, 2])
+#         h14 = np.tanh(-2*x[:, 3]+1*x[:, 4])
+#
+#         # nodes in the second hidden layer
+#         h21 = np.tanh(-2*h11+h13)
+#         h22 = h12-h13
+#         h23 = np.tanh(h13-2*h14)
+#
+#         # generate treatment
+#         prob = np.exp(h22)/(1 + np.exp(h22))
+#         treat = bernoulli.rvs(p=prob)
+#
+#         # nodes in the third hidden layer
+#         h31 = np.tanh(1*h21-2*treat)
+#         h32 = np.tanh(-1*treat+2*h23)
+#
+#         # counterfactual nodes in the third hidden layer
+#         h31_count = np.tanh(1*h21-2*(1-treat))
+#         h32_count = np.tanh(-1*(1-treat)+2*h23)
+#
+#         # generate outcome variable
+#         y = -4*h31+2*h32 + np.random.normal(0, 1)
+#
+#         # generate counterfactual outcome variable
+#         y_count = -4*h31_count+2*h32_count + np.random.normal(0, 1)
+#
+#         self.x = torch.FloatTensor(x).to(self.device)
+#         self.treat = torch.FloatTensor(treat).to(self.device)
+#         self.y = torch.FloatTensor(y).reshape(self.data_size, 1).to(self.device)
+#         self.y_count = torch.FloatTensor(y_count).reshape(self.data_size, 1).to(self.device)
+#
+#     def __len__(self):
+#         return int(self.data_size)
+#
+#     def __getitem__(self, idx):
+#         y = self.y[idx]
+#         x = self.x[idx]
+#         treat = self.treat[idx]
+#         y_count = self.y_count[idx]
+#         return y, treat, x, y_count
 
