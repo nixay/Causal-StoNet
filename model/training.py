@@ -305,7 +305,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                     var_ind_out = np.matmul(para_gamma_path[str(epoch)][name], var_ind_out)
                     if i/2 == net.treat_layer:
                         var_ind_treat = np.copy(var_ind_out[net.treat_node, :])
-                        var_ind_out[net.treat_node, :] = np.zeros_like(var_ind_out[net.treat_node, :])
+                        # var_ind_out[net.treat_node, :] = np.zeros_like(var_ind_out[net.treat_node, :])
             var_ind_out = np.max(var_ind_out, 0)
             if isinstance(net.treat_node, (list, tuple, np.ndarray)):
                 var_ind_treat = np.prod(var_ind_treat, axis=0)

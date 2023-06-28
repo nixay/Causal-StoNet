@@ -209,7 +209,7 @@ def main():
                                 impute_lrs=impute_lrs, miss_lr=miss_lr, **optim_args)
         para_train = output_train["para_path"]
         para_grad_train = output_train["para_grad_path"]
-        # para_gamma_train = output_train["para_gamma_path"]
+        para_gamma_train = output_train["para_gamma_path"]
         var_gamma_out_train = output_train["input_gamma_path"]["var_selected_out"]
         num_gamma_out_train = output_train["input_gamma_path"]["num_selected_out"]
         var_gamma_treat_train = output_train["input_gamma_path"]["var_selected_treat"]
@@ -247,26 +247,26 @@ def main():
         f.write(temp_str)
         f.close()
 
-        # with open(os.path.join(PATH, 'para_gamma_train.pkl'), "wb") as f:
-        #     dump(para_gamma_train, f)
+        with open(os.path.join(PATH, 'para_gamma_train.pkl'), "wb") as f:
+            dump(para_gamma_train, f)
 
-        with open(os.path.join(PATH, 'para_train.pkl'), "wb") as f:
-            dump(para_train, f)
-
-        with open(os.path.join(PATH, 'para_grad_train.pkl'), "wb") as f:
-            dump(para_grad_train, f)
+        # with open(os.path.join(PATH, 'para_train.pkl'), "wb") as f:
+        #     dump(para_train, f)
+        #
+        # with open(os.path.join(PATH, 'para_grad_train.pkl'), "wb") as f:
+        #     dump(para_grad_train, f)
 
         with open(os.path.join(PATH, 'performance_train.pkl'), "wb") as f:
             dump(performance_train, f)
 
-        # with open(os.path.join(PATH, 'var_gamma_out_train.pkl'), "wb") as f:
-        #     dump(var_gamma_out_train, f)
+        with open(os.path.join(PATH, 'var_gamma_out_train.pkl'), "wb") as f:
+            dump(var_gamma_out_train, f)
 
         # with open(os.path.join(PATH, 'num_selected_out_train.pkl'), "wb") as f:
         #     dump(num_gamma_out_train, f)
 
-        # with open(os.path.join(PATH, 'var_gamma_treat_train.pkl'), "wb") as f:
-        #     dump(var_gamma_treat_train, f)
+        with open(os.path.join(PATH, 'var_gamma_treat_train.pkl'), "wb") as f:
+            dump(var_gamma_treat_train, f)
 
         # with open(os.path.join(PATH, 'num_selected_treat_train.pkl'), "wb") as f:
         #     dump(num_gamma_treat_train, f)
@@ -349,6 +349,10 @@ def main():
             ate_list[prune_seed] = ate_db/len(val_set)
 
         torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
+
+        # save imputed input
+        with open(os.path.join(PATH, 'x_imputed.pkl'), "wb") as f:
+            dump(data.x, f)
 
     # save overall performance
     np.savetxt(os.path.join(base_path, 'Overall_train_loss_out.txt'), out_train_loss_list, fmt="%s")
