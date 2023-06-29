@@ -188,17 +188,17 @@ def main():
                                    impute_lrs=impute_lrs, miss_lr=miss_lr, **optim_args)
         para_pretrain = output_pretrain["para_path"]
         para_grad_pretrain = output_pretrain["para_grad_path"]
-        # para_gamma_pretrain = output_pretrain["para_gamma_path"]
+        para_gamma_pretrain = output_pretrain["para_gamma_path"]
         performance_pretrain = output_pretrain["performance"]
 
         # with open(os.path.join(PATH, 'para_gamma_pretrain.pkl'), "wb") as f:
         #     dump(para_gamma_pretrain, f)
 
-        with open(os.path.join(PATH, 'para_pretrain.pkl'), "wb") as f:
-            dump(para_pretrain, f)
+        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "wb") as f:
+        #     dump(para_pretrain, f)
 
-        with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "wb") as f:
-            dump(para_grad_pretrain, f)
+        # with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "wb") as f:
+        #     dump(para_grad_pretrain, f)
 
         with open(os.path.join(PATH, 'performance_pretrain.pkl'), "wb") as f:
             dump(performance_pretrain, f)
@@ -247,8 +247,8 @@ def main():
         f.write(temp_str)
         f.close()
 
-        with open(os.path.join(PATH, 'para_gamma_train.pkl'), "wb") as f:
-            dump(para_gamma_train, f)
+        # with open(os.path.join(PATH, 'para_gamma_train.pkl'), "wb") as f:
+        #     dump(para_gamma_train, f)
 
         # with open(os.path.join(PATH, 'para_train.pkl'), "wb") as f:
         #     dump(para_train, f)
@@ -259,14 +259,14 @@ def main():
         with open(os.path.join(PATH, 'performance_train.pkl'), "wb") as f:
             dump(performance_train, f)
 
-        with open(os.path.join(PATH, 'var_gamma_out_train.pkl'), "wb") as f:
-            dump(var_gamma_out_train, f)
+        # with open(os.path.join(PATH, 'var_gamma_out_train.pkl'), "wb") as f:
+        #     dump(var_gamma_out_train, f)
 
         # with open(os.path.join(PATH, 'num_selected_out_train.pkl'), "wb") as f:
         #     dump(num_gamma_out_train, f)
 
-        with open(os.path.join(PATH, 'var_gamma_treat_train.pkl'), "wb") as f:
-            dump(var_gamma_treat_train, f)
+        # with open(os.path.join(PATH, 'var_gamma_treat_train.pkl'), "wb") as f:
+        #     dump(var_gamma_treat_train, f)
 
         # with open(os.path.join(PATH, 'num_selected_treat_train.pkl'), "wb") as f:
         #     dump(num_gamma_treat_train, f)
@@ -277,11 +277,11 @@ def main():
                                     impute_lrs=impute_lrs_fine_tune, miss_lr=miss_lr_fine_tune, **optim_args)
         para_fine_tune = output_fine_tune["para_path"]
         para_grad_fine_tune = output_fine_tune["para_grad_path"]
-        # para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
-        # var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
-        # num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
-        # var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
-        # num_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_treat"]
+        para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
+        var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
+        num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
+        var_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_treat"]
+        num_gamma_treat_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_treat"]
         performance_fine_tune = output_fine_tune["performance"]
         likelihoods = output_fine_tune["likelihoods"]
 
@@ -289,11 +289,11 @@ def main():
         # with open(os.path.join(PATH, 'para_gamma_fine_tune.pkl'), "wb") as f:
         #     dump(para_gamma_fine_tune, f)
 
-        with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
-            dump(para_fine_tune, f)
+        # with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
+        #     dump(para_fine_tune, f)
 
-        with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "wb") as f:
-            dump(para_grad_fine_tune, f)
+        # with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "wb") as f:
+        #     dump(para_grad_fine_tune, f)
 
         with open(os.path.join(PATH, 'performance_fine_tune.pkl'), "wb") as f:
             dump(performance_fine_tune, f)
@@ -350,9 +350,9 @@ def main():
 
         torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
 
-        # save imputed input
-        with open(os.path.join(PATH, 'x_imputed.pkl'), "wb") as f:
-            dump(data.x, f)
+        # # save imputed input
+        # with open(os.path.join(PATH, 'x_imputed.pkl'), "wb") as f:
+        #     dump(data.x, f)
 
     # save overall performance
     np.savetxt(os.path.join(base_path, 'Overall_train_loss_out.txt'), out_train_loss_list, fmt="%s")
