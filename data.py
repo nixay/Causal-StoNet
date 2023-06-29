@@ -12,6 +12,12 @@ def true_ate(y, treat, y_count):
     return ate
 
 
+def prune_threshold(sigma_0, sigma_1, lambda_n):
+    threshold = np.sqrt(np.log((1 - lambda_n) / lambda_n * np.sqrt(sigma_1 / sigma_0)) / (
+            0.5 / sigma_0 - 0.5 / sigma_1))
+    return threshold
+
+
 def data_preprocess(data, partition_seed, cross_fit_no, cross_val=3, x_scale=True, y_scale=True):
     """
     data: Dataset object
