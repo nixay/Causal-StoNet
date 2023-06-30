@@ -52,6 +52,7 @@ parser.add_argument('--impute_lr_decay', default=1.2, type=float, help='decay fa
 parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nargs='+',
                     help='variance of each layer for the model')
 parser.add_argument('--treat_loss_weight', default=500, type=float, help='weight for the treatment loss')
+parser.add_argument('--obs_ind_loss_weight', default=5000, type=float, help='weight for the treatment loss')
 
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
@@ -104,6 +105,7 @@ def main():
     para_lr_decay = args.para_lr_decay
     impute_lr_decay = args.impute_lr_decay
     treat_loss_weight = args.treat_loss_weight
+    obs_ind_loss_weight = args.obs_ind_loss_weight
 
     # imputation parameters
     impute_lrs = args.impute_lr
@@ -180,8 +182,8 @@ def main():
                           mh_step=mh_step, sigma_list=sigma_list, prior_sigma_0=prior_sigma_0,
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
                           impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
-                          treat_loss_weight=treat_loss_weight, miss_cond_mean=data.cond_mean,
-                          miss_cond_var=data.cond_var)
+                          treat_loss_weight=treat_loss_weight, obs_ind_loss_weight = obs_ind_loss_weight,
+                          miss_cond_mean=data.cond_mean, miss_cond_var=data.cond_var)
         # pretrain
         print("Pretrain")
         output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
@@ -289,8 +291,8 @@ def main():
         # with open(os.path.join(PATH, 'para_gamma_fine_tune.pkl'), "wb") as f:
         #     dump(para_gamma_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
-        #     dump(para_fine_tune, f)
+        with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
+            dump(para_fine_tune, f)
 
         with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "wb") as f:
             dump(para_grad_fine_tune, f)

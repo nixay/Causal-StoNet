@@ -119,7 +119,8 @@ class StoNet_Causal(nn.Module):
             likelihood -= self.sse(x_miss[:, i], cond_mean[i].expand(x_miss[:, i].size()))/(2*cond_var[i])
         return likelihood
 
-    def likelihood_latent(self, forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list, y, treat_loss_weight=1):
+    def likelihood_latent(self, forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list, y,
+                          treat_loss_weight=1, obs_ind_loss_weight=1):
         if layer_index == 0:  # log_likelihood(Y_1|X)
             likelihood = -self.sse(forward_hidden, hidden_list[layer_index]) / (2 * sigma_list[
                 layer_index])
@@ -159,7 +160,7 @@ class StoNet_Causal(nn.Module):
 
                     m_obs = m[:, self.obs_ind_node]
                     obs = hidden_list[layer_index][:, self.obs_ind_node]
-                    likelihood_obs = -self.obs_ind_loss(m_obs, obs)
+                    likelihood_obs = -self.obs_ind_loss(m_obs, obs) * obs_ind_loss_weight
 
                     if isinstance(self.obs_ind_node, (list, tuple, np.ndarray)):
                         lower = self.obs_ind_node[0]
@@ -186,7 +187,7 @@ class StoNet_Causal(nn.Module):
         return likelihood
 
     def backward_imputation(self, mh_step, impute_lrs, alpha, outcome_loss, sigma_list, x, treat, y, treat_loss_weight=1,
-                            miss_cond_mean=None, miss_cond_var=None, miss_lr=None, miss_ind=None):
+                            obs_ind_loss_weight=1, miss_cond_mean=None, miss_cond_var=None, miss_lr=None, miss_ind=None):
         # initialize momentum term and hidden unit
         hidden_list, momentum_list = [], []
         hidden_list.append(self.module_list[0](x).detach())
@@ -219,9 +220,9 @@ class StoNet_Causal(nn.Module):
                 hidden_list[layer_index].grad = None
 
                 hidden_likelihood1 = self.likelihood_latent(forward_hidden, hidden_list, layer_index + 1, outcome_loss, sigma_list,
-                                                            y, treat_loss_weight)
+                                                            y, treat_loss_weight, obs_ind_loss_weight)
                 hidden_likelihood2 = self.likelihood_latent(forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list,
-                                                            y, treat_loss_weight)
+                                                            y, treat_loss_weight, obs_ind_loss_weight)
 
                 hidden_likelihood1.backward()
                 hidden_likelihood2.backward()

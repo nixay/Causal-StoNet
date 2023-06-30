@@ -7,8 +7,8 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
              sigma_list, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
-             impute_lr_decay, treat_loss_weight, scalar_y=1, outcome_cat=False, CE_weight=None, miss_cond_mean=None,
-             miss_cond_var=None, miss_lr=None):
+             impute_lr_decay, treat_loss_weight, obs_ind_loss_weight, scalar_y=1, outcome_cat=False, CE_weight=None,
+             miss_cond_mean=None, miss_cond_var=None, miss_lr=None):
 
     """
     train the network
@@ -169,7 +169,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         for y, treat, x, *rest in train_data:
             backward_imputation_args = dict(mh_step=mh_step, impute_lrs=step_impute_lrs, alpha=alpha,
                                             outcome_loss=out_loss_sum, sigma_list=sigma_list, x=x, treat=treat,
-                                            y=y, treat_loss_weight=treat_loss_weight)
+                                            y=y, treat_loss_weight=treat_loss_weight, obs_ind_loss_weight=obs_ind_loss_weight)
             if net.miss_col is not None:
                 miss_ind = rest[0]
                 backward_imputation_args.update(miss_cond_mean=miss_cond_mean, miss_cond_var=miss_cond_var,
@@ -191,7 +191,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
             forward_hidden = net.module_list[0](x)
             for layer_index in range(net.num_hidden + 1):
                 likelihood = net.likelihood_latent(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
-                                                   treat_loss_weight) / batch_size
+                                                   treat_loss_weight, obs_ind_loss_weight) / batch_size
                 optimizer = optimizer_list[layer_index]
                 likelihood.backward()
 
@@ -216,7 +216,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                         # need to recalculate likelihood afater the last parameter update
                         # make sure that treat loss have the same weight as outcome loss
                         likelihood = net.likelihood_latent(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
-                                                           treat_loss_weight)
+                                                           treat_loss_weight, obs_ind_loss_weight)
                         hidden_likelihood[layer_index] += likelihood
 
         # calculate training performance
