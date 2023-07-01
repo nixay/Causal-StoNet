@@ -14,7 +14,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
     train the network
     inputs:
     mode: training mode
-        for "pretrain", the impute_lr and para_lr will keep constant; pruning result will not be recorded.
+        for "pretrain", the impute_lr and para_lr will keep onstant; pruning result will not be recorded.
         for "train", the impute_lr and para_lr decays epoch by epoch; pruning result will be recorded.
     net: StoNet_Causal object defined in network.py
         the network to be trained
@@ -202,10 +202,9 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 if net.prune_flag == 1:
                     net.prune_masked_grad()
 
-                # gradient clipping on hidden layers
-                if layer_index < net.num_hidden + 1:
-                    torch.nn.utils.clip_grad_norm_(net.module_list[layer_index].parameters(),
-                                               max_norm=1/(2*sigma_list[layer_index]), norm_type=2)
+                # gradient clipping
+                torch.nn.utils.clip_grad_norm_(net.module_list[layer_index].parameters(),
+                                           max_norm=1/(2*sigma_list[layer_index]), norm_type=2)
                 optimizer.step()
 
                 if layer_index == 0:  # update the value of forward_hidden after para update for the first layer
