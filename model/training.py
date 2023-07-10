@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
              sigma_list, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
-             impute_lr_decay, treat_loss_weight, obs_ind_loss_weight, scalar_y=1, outcome_cat=False, CE_weight=None,
+             impute_lr_decay, treat_loss_weight, obs_ind_loss_weight=None, scalar_y=1, outcome_cat=False, CE_weight=None,
              miss_cond_mean=None, miss_cond_var=None, miss_lr=None):
 
     """
