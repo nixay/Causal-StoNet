@@ -54,6 +54,7 @@ class StoNet_Causal(nn.Module):
         self.prune_flag = 0
         self.mask_prune = None
 
+        # mask to cut the connection from observed indicator to the outcome
         if self.miss_pattern == 'mnar':
             self.mask_mnar = torch.ones_like(self.module_list[self.treat_layer+2][1].weight)
             self.mask_mnar[:, self.obs_ind_node] = 0
@@ -153,7 +154,7 @@ class StoNet_Causal(nn.Module):
             likelihood = -outcome_loss(self.module_list[layer_index](hidden_list[layer_index - 1]), y) / (
                     2 * sigma_list[self.num_hidden])
 
-        else:  # log_likelihood(Y_i|Y_i-1)
+        else:  # log_likelihood(Y_i|Y_i-1) or log likelihood related to the observed indicator
             if self.miss_pattern == 'mnar':
                 if layer_index == self.treat_layer+1:
                     m = self.module_list[layer_index](hidden_list[layer_index - 1])
