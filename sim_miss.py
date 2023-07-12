@@ -254,9 +254,9 @@ def main():
 
         # with open(os.path.join(PATH, 'para_train.pkl'), "wb") as f:
         #     dump(para_train, f)
-        #
-        # with open(os.path.join(PATH, 'para_grad_train.pkl'), "wb") as f:
-        #     dump(para_grad_train, f)
+
+        with open(os.path.join(PATH, 'para_grad_train.pkl'), "wb") as f:
+            dump(para_grad_train, f)
 
         with open(os.path.join(PATH, 'performance_train.pkl'), "wb") as f:
             dump(performance_train, f)
@@ -291,8 +291,8 @@ def main():
         # with open(os.path.join(PATH, 'para_gamma_fine_tune.pkl'), "wb") as f:
         #     dump(para_gamma_fine_tune, f)
 
-        with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
-            dump(para_fine_tune, f)
+        # with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
+        #     dump(para_fine_tune, f)
 
         with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "wb") as f:
             dump(para_grad_fine_tune, f)
