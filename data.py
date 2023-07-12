@@ -405,13 +405,13 @@ class SimData_Missing(Dataset):
         # generate missing values
         if self.miss_pattern == 'mnar':  # note that only x1 and x4 has missing values
             # for x1
-            beta1 = np.concatenate((np.array([4, -2]), np.resize([0.5, 0, -0.5, 0], 100)))
+            beta1 = np.concatenate((np.array([4, -2]), np.resize([0.1, 0, -0.1, 0], 100)))
             score1 = beta1[0] + beta1[1]*treat + np.matmul(x, beta1[2:])  # R1|X, A
             prob1 = np.exp(score1)/(1+np.exp(score1))
             obs_ind1 = bernoulli.rvs(p=prob1)  # 1 is observed and 0 is missing
 
             # for x4
-            beta4 = np.concatenate((np.array([4, -2]), np.resize([0, -0.5, 0, 0.5], 100)))
+            beta4 = np.concatenate((np.array([4, -2]), np.resize([0, -0.1, 0, 0.1], 100)))
             score4 = beta4[0] + beta4[1]*treat + np.matmul(x, beta4[2:])  # R4|X, A
             prob4 = np.exp(score4)/(1+np.exp(score4))
             obs_ind4 = bernoulli.rvs(p=prob4)  # 1 is observed and 0 is missing
