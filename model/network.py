@@ -67,10 +67,7 @@ class StoNet_Causal(nn.Module):
         else:
             self.treat_loss = nn.BCEWithLogitsLoss(weight=CE_treat_weight, reduction='sum')
 
-        if isinstance(self.obs_ind_node, (list, tuple, np.ndarray)):
-            self.obs_ind_loss = nn.CrossEntropyLoss(reduction='sum')
-        else:
-            self.obs_ind_loss = nn.BCEWithLogitsLoss(reduction='sum')
+        self.obs_ind_loss = nn.BCEWithLogitsLoss(reduction='sum')
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
