@@ -196,7 +196,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 likelihood.backward()
 
                 if net.miss_pattern  == 'mnar':
-                    if layer_index == net.treat_node + 2:
+                    if layer_index == net.treat_layer + 2:
                         net.mnar_masked_grad()
 
                 if net.prune_flag == 1:
