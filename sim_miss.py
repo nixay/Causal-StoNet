@@ -17,11 +17,10 @@ parser.add_argument('--data_seed', default=1, type=int, help='set seed for data 
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
 # "mar": missing at random; "mnar": missing not at random
 parser.add_argument('--miss_pattern', default='mar', type=str, help='missing pattern of the covariates')
-
+parser.add_argument('-nbh', '--graph_nb', default=[[1, 2], [1, 2, 4, 5]], type=int, nargs='+', action='append',
+                    help='graph neibors of the covariates with missing values')
 # dataset setting
-parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
-
 # Parameter for StoNet
 # model
 parser.add_argument('--layer', default=3, type=int, help='number of hidden layers')
@@ -46,7 +45,6 @@ parser.add_argument('--impute_lr_miss', default=5e-4, type=float,
 parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum weight for SGHMC')
 parser.add_argument('--para_lr_train', default=[1e-3, 3e-6, 3e-8, 1e-12], type=float, nargs='+',
                     help='step size for parameter update during training stage')
-parser.add_argument('--para_momentum', default=0.9, type=float, help='momentum weight for parameter update')
 parser.add_argument('--para_lr_decay', default=1.2, type=float, help='decay factor for para_lr')
 parser.add_argument('--impute_lr_decay', default=1.2, type=float, help='decay factor for impute_lr')
 parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nargs='+',
@@ -78,19 +76,20 @@ def main():
     data_seed = args.data_seed
     data = SimData_Missing(data_seed, miss_pattern)
     train_set, val_set, test_set = miss_simulated_preprocess(data, args.partition_seed)
+    graph_nb = args.graph_nb
 
     # load dataset
-    num_workers = args.num_workers
     batch_size = args.batch_size
-    train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    test_data = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+    val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True)
+    test_data = DataLoader(test_set, batch_size=batch_size, shuffle=True)
 
     # network setup
+    miss_col = args.miss_col
     net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=data.x[0].size(dim=0),
                     output_dim=len(data.y.unique()) if classification_flag else 1,
-                    treat_layer=args.depth, treat_node=args.treat_node, miss_col = args.miss_col,
-                    obs_ind_node = args.obs_ind_node, miss_pattern=miss_pattern)
+                    treat_layer=args.depth, treat_node=args.treat_node, miss_col=miss_col,
+                    obs_ind_node=args.obs_ind_node, miss_pattern=miss_pattern)
 
     # set number of independent runs for sparsity
     num_seed = args.num_run
@@ -98,7 +97,7 @@ def main():
     # training setting
     para_lrs_train = args.para_lr_train
     para_lrs_fine_tune = args.para_lr_fine_tune
-    para_momentum = args.para_momentum
+    para_momentum = 0.9
     training_epochs = args.train_epoch
     pretrain_epochs = args.pretrain_epoch
     fine_tune_epochs = args.fine_tune_epoch
@@ -146,6 +145,12 @@ def main():
     decay_spec = str(impute_lr_decay) + '_' + str(para_lr_decay)
     base_path = os.path.join(base_path, basic_spec, spec, decay_spec)
 
+    # gaussian graphical model structure for the covariates with missing values
+    if miss_col is not None:
+        for i in range(len(miss_col)):
+            graph_nb[i].insert(0, args.miss_col[i])
+        graph = graph_nb
+
     for prune_seed in range(num_seed):
         print('number of runs', prune_seed)
 
@@ -183,7 +188,7 @@ def main():
                           prior_sigma_1=prior_sigma_1, lambda_n=lambda_n, para_lr_decay=para_lr_decay,
                           impute_lr_decay=impute_lr_decay, outcome_cat=classification_flag,
                           treat_loss_weight=treat_loss_weight, obs_ind_loss_weight = obs_ind_loss_weight,
-                          miss_cond_mean=data.cond_mean, miss_cond_var=data.cond_var)
+                          graph=graph)
         # pretrain
         print("Pretrain")
         output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
