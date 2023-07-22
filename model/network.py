@@ -67,7 +67,8 @@ class StoNet_Causal(nn.Module):
         else:
             self.treat_loss = nn.BCEWithLogitsLoss(weight=CE_treat_weight, reduction='sum')
 
-        self.obs_ind_loss = nn.BCEWithLogitsLoss(reduction='sum')
+        if miss_pattern == 'mnar':
+            self.obs_ind_loss = nn.BCEWithLogitsLoss(reduction='sum')
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -111,10 +112,20 @@ class StoNet_Causal(nn.Module):
         for name, para in self.named_parameters():
             para.grad[self.mask_prune[name]] = 0
 
-    def likelihood_miss(self, x_miss, cond_mean, cond_var):
-        likelihood = 0
+    def likelihood_miss(self, x_impute, graph):
+        likelihoods = []
         for i in range(len(self.miss_col)):
-            likelihood -= self.sse(x_miss[:, i], cond_mean[i].expand(x_miss[:, i].size()))/(2*cond_var[i])
+            with torch.no_grad():
+                graph_idx = graph[i]
+                graph_x = x_impute[:, graph_idx]
+                graph_mean = graph_x.mean(dim=0)
+                graph_cov = graph_x.T.cov()
+                temp = torch.linalg.solve(graph_cov[1:len(graph_idx), 1:len(graph_idx)], graph_cov[1:len(graph_idx), 0])
+                cond_mean = graph_mean[0] + torch.matmul(graph_x[:, 1:len(graph_idx)] -
+                                                         graph_mean[1:len(graph_idx)], temp)
+                cond_cov = graph_cov[0, 0] - torch.matmul(temp, graph_cov[1:len(graph_idx), 0])
+            likelihoods.append(-self.sse(x_impute[:, self.miss_col[i]], cond_mean)/(2*cond_cov))
+        likelihood = sum(likelihoods)
         return likelihood
 
     def likelihood_latent(self, forward_hidden, hidden_list, layer_index, outcome_loss, sigma_list, y,
@@ -185,7 +196,7 @@ class StoNet_Causal(nn.Module):
         return likelihood
 
     def backward_imputation(self, mh_step, impute_lrs, alpha, outcome_loss, sigma_list, x, treat, y, treat_loss_weight=1,
-                            obs_ind_loss_weight=1, miss_cond_mean=None, miss_cond_var=None, miss_lr=None, miss_ind=None):
+                            obs_ind_loss_weight=1, graph=None, miss_lr=None, miss_ind=None):
         # initialize momentum term and hidden unit
         hidden_list, momentum_list = [], []
         hidden_list.append(self.module_list[0](x).detach())
@@ -204,12 +215,9 @@ class StoNet_Causal(nn.Module):
         with torch.no_grad():
             forward_hidden = torch.clone(hidden_list[0])
 
-        # initialize missing values
+        # initialize momentum term of x imputation
         if self.miss_col is not None:
-            if torch.max(miss_ind) > 0:
-                x_miss = torch.clone(x[:, self.miss_col].detach())
-                x_miss_momentum = torch.zeros_like(x_miss)
-                x_miss.requires_grad = True
+            x_miss_momentum = torch.zeros_like(x[:, self.miss_col])
 
         # backward imputation by SGHMC
         for step in range(mh_step):
@@ -241,20 +249,23 @@ class StoNet_Causal(nn.Module):
                     hidden_list[layer_index].data += lr * momentum_list[layer_index]
             # missing value imputation
             if self.miss_col is not None:
-                if torch.max(miss_ind) > 0:
-                    x_miss.grad = None
-                    miss_likelihood1 = self.likelihood_miss(x_miss, miss_cond_mean, miss_cond_var)
-                    miss_likelihood2 = self.likelihood_latent(forward_hidden, hidden_list, 0, outcome_loss, sigma_list,
-                                                         y, treat_loss_weight)
-                    miss_likelihood1.backward()
-                    miss_likelihood2.backward()
-                    with torch.no_grad():
-                        x_miss_momentum = (1 - alpha) * x_miss_momentum + miss_lr * x_miss.grad + \
-                                          torch.FloatTensor(x_miss.shape).to(self.device).normal_().mul(np.sqrt(2*alpha))
-                        x_miss_momentum = x_miss_momentum * miss_ind
-                        x[:, self.miss_col] += miss_lr * x_miss_momentum
+                x_impute = torch.clone(x.detach())  # x cannot be treated as leaf variable by pytorch, so create x_impute
+                x_impute.requires_grad = True
+                x_impute.grad = None
 
-                        # update the hidden nodes in the first hidden layer after missing value imputation
-                        forward_hidden = torch.clone(self.module_list[0](x).detach())
+                miss_likelihood1 = self.likelihood_miss(x_impute, graph)
+                miss_likelihood2 = -self.sse(self.module_list[0](x_impute), hidden_list[layer_index]) / (2 * sigma_list[0])
 
-            return hidden_list
+                miss_likelihood1.backward()
+                miss_likelihood2.backward()
+
+                with torch.no_grad():
+                    x_miss_momentum = (1 - alpha) * x_miss_momentum + miss_lr * x_impute.grad[:, self.miss_col] + \
+                                      torch.FloatTensor(x_impute[:, self.miss_col].shape).to(self.device).normal_().mul(np.sqrt(2*alpha))
+                    x_miss_momentum = x_miss_momentum * miss_ind # only update the entries with missing values
+                    x[:, self.miss_col] += miss_lr * x_miss_momentum
+
+                    # update the hidden nodes in the first hidden layer after missing value imputation
+                    forward_hidden = torch.clone(self.module_list[0](x).detach())
+
+        return hidden_list
