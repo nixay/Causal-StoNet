@@ -8,7 +8,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list, impute_lrs, alpha, mh_step,
              sigma_list, prior_sigma_0, prior_sigma_1, lambda_n, para_lr_decay,
              impute_lr_decay, treat_loss_weight, obs_ind_loss_weight=None, scalar_y=1, outcome_cat=False, CE_weight=None,
-             miss_cond_mean=None, miss_cond_var=None, miss_lr=None):
+             graph=None, miss_lr=None):
 
     """
     train the network
@@ -40,6 +40,10 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         proportion for components of mixture gaussian prior
     para_lr_decay, impute_lr_decay: float
         decay factor for para_lr and impute_lr, respectively
+    treat_loss_weight:
+        scaling for treatment model's loss
+    obs_ind_loss_weight：
+        scaling for observtional indicator's loss (when missing_pattern is 'mnar')
     scalar_y: float
         when the output is standardized, the losses need to be converted back to the original scale by multiplying
         scalar_y, which is essentially the variance of the train set of y
@@ -47,15 +51,11 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         the type of outcome variable
         if TRUE, the outcome variable is a categorical variable, and this is a regression task
         if False, the outcome variable is a numerical variable, and this is a classification task
-    treat_loss_weight:
-        scaling for treatment model's loss
     CE_weight: None or torch tensor:
         when the outcome variable is categorical, the weight assigned to each class.
         can be used to deal with unbalanced dataset.
-    miss_cond_mean: list of floats
-        the conditional mean of missing covaraites
-    miss_cond_var: list of floats
-        the conditional variance of missing covariates
+    graph: list of lists
+        the graphical structure of the gaussian graphical model for the covariates with missing values
     miss_lr: float
         learning rate for imputation of missing covariates
 
@@ -165,15 +165,13 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
         # for i in range(net.num_hidden):
         #     print("para_lr", optimizer_list[i].param_groups[0]['lr'])
         # print("miss_lr", miss_lr)
-
         for y, treat, x, *rest in train_data:
             backward_imputation_args = dict(mh_step=mh_step, impute_lrs=step_impute_lrs, alpha=alpha,
                                             outcome_loss=out_loss_sum, sigma_list=sigma_list, x=x, treat=treat,
                                             y=y, treat_loss_weight=treat_loss_weight, obs_ind_loss_weight=obs_ind_loss_weight)
             if net.miss_col is not None:
                 miss_ind = rest[0]
-                backward_imputation_args.update(miss_cond_mean=miss_cond_mean, miss_cond_var=miss_cond_var,
-                                    miss_lr=miss_lr, miss_ind=miss_ind)
+                backward_imputation_args.update(graph=graph, miss_lr=miss_lr, miss_ind=miss_ind)
             # backward imputation
             hidden_list = net.backward_imputation(**backward_imputation_args)
 
@@ -195,7 +193,7 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                 optimizer = optimizer_list[layer_index]
                 likelihood.backward()
 
-                if net.miss_pattern  == 'mnar':
+                if net.miss_pattern == 'mnar':
                     if layer_index == net.treat_layer + 2:
                         net.mnar_masked_grad()
 
@@ -217,7 +215,6 @@ def training(mode, net, train_data, val_data, epochs, batch_size, optimizer_list
                         likelihood = net.likelihood_latent(forward_hidden, hidden_list, layer_index, out_loss_sum, sigma_list, y,
                                                            treat_loss_weight, obs_ind_loss_weight)
                         hidden_likelihood[layer_index] += likelihood
-
         # calculate training performance
         out_train_loss, out_train_correct, treat_train_loss, treat_train_correct = 0, 0, 0, 0
         with torch.no_grad():
