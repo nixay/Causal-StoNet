@@ -349,7 +349,7 @@ class TCGA(Dataset):
         return y, treat, x
 
 
-# Simulation dataset for missing at random
+# Simulation dataset with missing values
 class SimData_Missing(Dataset):
     """
     generate simulation dataset with missing values under different missing patterns;
@@ -361,8 +361,7 @@ class SimData_Missing(Dataset):
         'mnar': missing not at random
     """
     def __init__(self, seed, miss_pattern):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.miss_pattern = miss_pattern
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # load covariates
         csv_name = 'covariates_' + str(seed) + '.csv'
@@ -402,8 +401,8 @@ class SimData_Missing(Dataset):
         # generate counterfactual outcome variable
         y_count = -4*h31_count+2*h32_count + np.random.normal(0, 1)
 
-        # generate missing values
-        if self.miss_pattern == 'mnar':  # note that only x1 and x4 has missing values
+        # generate missing values: note that only x1 and x4 has missing values
+        if miss_pattern == 'mnar':  # generates observed indicator
             # for x1
             beta1 = np.concatenate((np.array([4, -2]), np.resize([0.1, 0, -0.1, 0], 100)))
             score1 = beta1[0] + beta1[1]*treat + np.matmul(x, beta1[2:])  # R1|X, A
@@ -416,7 +415,7 @@ class SimData_Missing(Dataset):
             prob4 = np.exp(score4)/(1+np.exp(score4))
             obs_ind4 = bernoulli.rvs(p=prob4)  # 1 is observed and 0 is missing
 
-        elif self.miss_pattern == 'mar':  # randomly delete 10% of the data entries in training set
+        elif miss_pattern == 'mar':  # randomly delete 10% of the data entries in training set
             # for x1
             obs_ind1 = np.array([0]*1000 + [1]*11000)
             np.random.shuffle(obs_ind1)
@@ -435,15 +434,11 @@ class SimData_Missing(Dataset):
 
         miss_ind = np.stack((1-obs_ind1, 1-obs_ind4), axis=1)
 
-        self.x = torch.FloatTensor(x).to(self.device)
-        self.treat = torch.FloatTensor(treat).to(self.device)
-        self.y = torch.FloatTensor(y).reshape(self.data_size, 1).to(self.device)
-        self.y_count = torch.FloatTensor(y_count).reshape(self.data_size, 1).to(self.device)
-        self.miss_ind = torch.FloatTensor(miss_ind).to(self.device)
-
-        self.cond_mean = None
-        self.cond_var = None
-        self.dist_miss()
+        self.x = torch.FloatTensor(x).to(device)
+        self.treat = torch.FloatTensor(treat).to(device)
+        self.y = torch.FloatTensor(y).reshape(self.data_size, 1).to(device)
+        self.y_count = torch.FloatTensor(y_count).reshape(self.data_size, 1).to(device)
+        self.miss_ind = torch.FloatTensor(miss_ind).to(device)
 
     def __len__(self):
         return int(self.data_size)
@@ -455,31 +450,6 @@ class SimData_Missing(Dataset):
         y_count = self.y_count[idx]
         miss_ind = self.miss_ind[idx]
         return y, treat, x, miss_ind, y_count
-
-    def dist_miss(self):
-        """
-        calculate conditional distribution for missing covariate
-        """
-        # estimate the conditional mean and conditional variance for missing covariates
-        # x1 neighborhood: x2, x3
-        graph_obs = self.x[self.obs_idx1, :3]
-        graph_mean = graph_obs.mean(dim=0)
-        graph_cov = graph_obs.T.cov()
-        temp = torch.linalg.solve(graph_cov[1:3, 1:3], graph_cov[1:3, 0])
-        cond_mean_x1 = graph_mean[0] + torch.matmul(graph_cov[0, 1:3], temp)
-        cond_cov_x1 = graph_cov[0, 0] - torch.matmul(temp, graph_cov[1:3, 0])
-
-        obs_idx4 = np.intersect1d(self.obs_idx1, self.obs_idx4, assume_unique=True)
-        # x4 neighborhood: x1, x2, x3, x4,
-        graph_obs = torch.index_select(self.x[obs_idx4, :5], 1, torch.LongTensor([3, 0, 1, 2, 4]))
-        graph_mean = graph_obs.mean(dim=0)
-        graph_cov = graph_obs.T.cov()
-        temp = torch.linalg.solve(graph_cov[1:5, 1:5], graph_cov[1:5, 0])
-        cond_mean_x4 = graph_mean[0] + torch.matmul(graph_cov[0, 1:5], temp)
-        cond_cov_x4 = graph_cov[0, 0] - torch.matmul(temp, graph_cov[1:5, 0])
-
-        self.cond_mean = [cond_mean_x1, cond_mean_x4]
-        self.cond_var = [cond_cov_x1, cond_cov_x4]
 
 
 # class SimData_Missing_test(Dataset):
@@ -536,4 +506,3 @@ class SimData_Missing(Dataset):
 #         treat = self.treat[idx]
 #         y_count = self.y_count[idx]
 #         return y, treat, x, y_count
-
