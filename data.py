@@ -70,14 +70,14 @@ def miss_simulated_preprocess(data, partition_seed):
     """
     # fill the nan values by the median of observed values
     data.x[data.mis_idx1, 0] = data.x[data.obs_idx1, 0].median()
-    # data.x[data.mis_idx4, 3] = data.x[data.obs_idx4, 3].median()
-    data.x[data.mis_idx5, 4] = data.x[data.obs_idx5, 4].median()
+    data.x[data.mis_idx4, 3] = data.x[data.obs_idx4, 3].median()
+    # data.x[data.mis_idx5, 4] = data.x[data.obs_idx5, 4].median()
 
     # separate missing data and observed data: only the training set will contain missing values
-    # mis_idx = np.union1d(data.mis_idx1, data.mis_idx4)
-    # obs_idx = np.intersect1d(data.obs_idx1, data.obs_idx4, assume_unique=True)
-    mis_idx = np.union1d(data.mis_idx1, data.mis_idx5)
-    obs_idx = np.intersect1d(data.obs_idx1, data.obs_idx5, assume_unique=True)
+    mis_idx = np.union1d(data.mis_idx1, data.mis_idx4)
+    obs_idx = np.intersect1d(data.obs_idx1, data.obs_idx4, assume_unique=True)
+    # mis_idx = np.union1d(data.mis_idx1, data.mis_idx5)
+    # obs_idx = np.intersect1d(data.obs_idx1, data.obs_idx5, assume_unique=True)
 
     np.random.seed(partition_seed)
     np.random.shuffle(obs_idx)
@@ -412,44 +412,45 @@ class SimData_Missing(Dataset):
             prob1 = np.exp(score1)/(1+np.exp(score1))
             obs_ind1 = bernoulli.rvs(p=prob1)  # 1 is observed and 0 is missing
 
-            # # for x4
-            # beta4 = np.concatenate((np.array([4, -2]), np.resize([0, -0.1, 0, 0.1], 100)))
-            # score4 = beta4[0] + beta4[1]*treat + np.matmul(x, beta4[2:])  # R4|X, A
-            # prob4 = np.exp(score4)/(1+np.exp(score4))
-            # obs_ind4 = bernoulli.rvs(p=prob4)  # 1 is observed and 0 is missing
+            # for x4
+            beta4 = np.concatenate((np.array([4, -2]), np.resize([0, -0.1, 0, 0.1], 100)))
+            score4 = beta4[0] + beta4[1]*treat + np.matmul(x, beta4[2:])  # R4|X, A
+            prob4 = np.exp(score4)/(1+np.exp(score4))
+            obs_ind4 = bernoulli.rvs(p=prob4)  # 1 is observed and 0 is missing
 
-            # for x5
-            beta5 = np.concatenate((np.array([4, -2]), np.resize([0, -0.1, 0, 0.1], 100)))
-            score5 = beta5[0] + beta5[1]*treat + np.matmul(x, beta5[2:])  # R4|X, A
-            prob5 = np.exp(score5)/(1+np.exp(score5))
-            obs_ind5 = bernoulli.rvs(p=prob5)  # 1 is observed and 0 is missing
+            # # for x5
+            # beta5 = np.concatenate((np.array([4, -2]), np.resize([0, -0.1, 0, 0.1], 100)))
+            # score5 = beta5[0] + beta5[1]*treat + np.matmul(x, beta5[2:])  # R4|X, A
+            # prob5 = np.exp(score5)/(1+np.exp(score5))
+            # obs_ind5 = bernoulli.rvs(p=prob5)  # 1 is observed and 0 is missing
 
         elif miss_pattern == 'mar':  # randomly delete 10% of the data entries in training set
             # for x1
             obs_ind1 = np.array([0]*1000 + [1]*11000)
             np.random.shuffle(obs_ind1)
 
-            # # for x4
-            # obs_ind4 = np.array([0]*1000 + [1]*11000)
-            # np.random.shuffle(obs_ind4)
+            # for x4
+            obs_ind4 = np.array([0]*1000 + [1]*11000)
+            np.random.shuffle(obs_ind4)
 
-            # for x5
-            obs_ind5 = np.array([0]*1000 + [1]*11000)
-            np.random.shuffle(obs_ind5)
+            # # for x5
+            # obs_ind5 = np.array([0]*1000 + [1]*11000)
+            # np.random.shuffle(obs_ind5)
 
         self.obs_idx1 = np.array(np.nonzero(obs_ind1)).flatten()
         self.mis_idx1 = np.array(np.nonzero(1-obs_ind1)).flatten()
         x[self.mis_idx1, 0] = np.nan
 
-        # self.obs_idx4 = np.array(np.nonzero(obs_ind4)).flatten()
-        # self.mis_idx4 = np.array(np.nonzero(1-obs_ind4)).flatten()
-        # x[self.mis_idx4, 3] = np.nan
+        self.obs_idx4 = np.array(np.nonzero(obs_ind4)).flatten()
+        self.mis_idx4 = np.array(np.nonzero(1-obs_ind4)).flatten()
+        x[self.mis_idx4, 3] = np.nan
 
-        self.obs_idx5 = np.array(np.nonzero(obs_ind5)).flatten()
-        self.mis_idx5 = np.array(np.nonzero(1 - obs_ind5)).flatten()
-        x[self.mis_idx5, 4] = np.nan
+        # self.obs_idx5 = np.array(np.nonzero(obs_ind5)).flatten()
+        # self.mis_idx5 = np.array(np.nonzero(1 - obs_ind5)).flatten()
+        # x[self.mis_idx5, 4] = np.nan
 
-        miss_ind = np.stack((1-obs_ind1, 1-obs_ind5), axis=1)
+        miss_ind = np.stack((1-obs_ind1, 1-obs_ind4), axis=1)
+        # miss_ind = np.stack((1-obs_ind1, 1-obs_ind5), axis=1)
 
         self.x = torch.FloatTensor(x).to(device)
         self.treat = torch.FloatTensor(treat).to(device)
