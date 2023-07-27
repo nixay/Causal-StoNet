@@ -38,24 +38,24 @@ parser.add_argument('--classification', dest='classification_flag', action='stor
 parser.add_argument('--pretrain_epoch', default=100, type=int, help='total number of pretraining epochs')
 parser.add_argument('--train_epoch', default=1500, type=int, help='total number of training epochs')
 parser.add_argument('--mh_step', default=1, type=int, help='number of SGHMC step for imputation')
-parser.add_argument('--impute_lr', default=[3e-3, 3e-4, 1e-6], type=float, nargs='+',
+parser.add_argument('--impute_lr', default=[3e-3, 1e-4, 1e-6], type=float, nargs='+',
                     help='step size for SGHMC for backward imputation of latent variables')
-parser.add_argument('--impute_lr_miss', default=5e-4, type=float,
+parser.add_argument('--impute_lr_miss', default=3e-4, type=float,
                     help='step size for SGHMC for backward imputation of missing values')
 parser.add_argument('--impute_alpha', default=0.1, type=float, help='momentum weight for SGHMC')
-parser.add_argument('--para_lr_train', default=[1e-3, 3e-6, 3e-8, 1e-12], type=float, nargs='+',
+parser.add_argument('--para_lr_train', default=[1e-3, 3e-6, 1e-7, 1e-12], type=float, nargs='+',
                     help='step size for parameter update during training stage')
 parser.add_argument('--para_lr_decay', default=1.2, type=float, help='decay factor for para_lr')
 parser.add_argument('--impute_lr_decay', default=1.2, type=float, help='decay factor for impute_lr')
 parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nargs='+',
                     help='variance of each layer for the model')
-parser.add_argument('--treat_loss_weight', default=500, type=float, help='weight for the treatment loss')
+parser.add_argument('--treat_loss_weight', default=300, type=float, help='weight for the treatment loss')
 parser.add_argument('--obs_ind_loss_weight', default=5000, type=float, help='weight for the treatment loss')
 
 # Parameters for Sparsity
 parser.add_argument('--num_run', default=10, type=int, help='Number of different initialization used to train the model')
 parser.add_argument('--fine_tune_epoch', default=200, type=int, help='total number of fine tuning epochs')
-parser.add_argument('--para_lr_fine_tune', default=[1e-4, 3e-7, 3e-9, 1e-13], type=float, nargs='+',
+parser.add_argument('--para_lr_fine_tune', default=[1e-4, 3e-7, 1e-8, 1e-13], type=float, nargs='+',
                     help='step size of parameter update for fine-tuning stage')
 # prior setting
 parser.add_argument('--sigma0', default=3e-3, type=float, help='sigma_0^2 in prior')
