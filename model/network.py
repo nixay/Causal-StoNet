@@ -65,7 +65,7 @@ class StoNet_Causal(nn.Module):
         if isinstance(self.treat_node, (list, tuple, np.ndarray)):
             self.treat_loss = nn.CrossEntropyLoss(weight=CE_treat_weight, reduction='sum')
         else:
-            self.treat_loss = nn.BCEWithLogitsLoss(weight=CE_treat_weight, reduction='sum')
+            self.treat_loss = nn.BCEWithLogitsLoss(pos_weight=CE_treat_weight, reduction='sum')
 
         if miss_pattern == 'mnar':
             self.obs_ind_loss = nn.BCEWithLogitsLoss(reduction='sum')
