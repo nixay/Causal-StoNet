@@ -71,13 +71,10 @@ def miss_simulated_preprocess(data, partition_seed):
     # fill the nan values by the median of observed values
     data.x[data.mis_idx1, 0] = data.x[data.obs_idx1, 0].median()
     data.x[data.mis_idx4, 3] = data.x[data.obs_idx4, 3].median()
-    # data.x[data.mis_idx5, 4] = data.x[data.obs_idx5, 4].median()
 
     # separate missing data and observed data: only the training set will contain missing values
     mis_idx = np.union1d(data.mis_idx1, data.mis_idx4)
     obs_idx = np.intersect1d(data.obs_idx1, data.obs_idx4, assume_unique=True)
-    # mis_idx = np.union1d(data.mis_idx1, data.mis_idx5)
-    # obs_idx = np.intersect1d(data.obs_idx1, data.obs_idx5, assume_unique=True)
 
     np.random.seed(partition_seed)
     np.random.shuffle(obs_idx)
@@ -352,6 +349,31 @@ class TCGA(Dataset):
         return y, treat, x
 
 
+# BRCA dataset
+class BRCA(Dataset):
+    def __init__(self):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        data = pd.read_csv("./raw_data/tcga/brca_data.csv")
+        num_col = ['years_to_birth', 'date_of_initial_pathologic_diagnosis', 'number_of_lymph_nodes'] + \
+                  data.columns[21:].to_list()
+        self.data_size = len(data.index)
+
+        self.y = torch.FloatTensor(np.array(data['vital_status'])).long().to(self.device)
+        self.treat = torch.FloatTensor(np.array(data['radiation_therapy'], dtype=np.float32)).to(self.device)
+        self.num_var = np.array(data[num_col], dtype=np.float32)
+        self.cat_var = np.array(data.loc[:, ~data.columns.isin(['vital_status', 'radiation_therapy', *num_col])], dtype=np.float32)
+
+    def __len__(self):
+        return int(self.data_size)
+
+    def __getitem__(self, idx):
+        y = self.y[idx]
+        treat = self.treat[idx]
+        x = torch.FloatTensor(np.concatenate((self.num_var[idx], self.cat_var[idx]))).to(self.device)
+        return y, treat, x
+
+
 # Simulation dataset with missing values
 class SimData_Missing(Dataset):
     """
@@ -404,7 +426,7 @@ class SimData_Missing(Dataset):
         # generate counterfactual outcome variable
         y_count = -4*h31_count+2*h32_count + np.random.normal(0, 1)
 
-        # generate missing values: note that only x1 and x4 (or x5) has missing values
+        # generate missing values: note that only x1 and x4 has missing values
         if miss_pattern == 'mnar':  # generates observed indicator
             # for x1
             beta1 = np.concatenate((np.array([4, -2]), np.resize([0.1, 0, -0.1, 0], 100)))
@@ -418,12 +440,6 @@ class SimData_Missing(Dataset):
             prob4 = np.exp(score4)/(1+np.exp(score4))
             obs_ind4 = bernoulli.rvs(p=prob4)  # 1 is observed and 0 is missing
 
-            # # for x5
-            # beta5 = np.concatenate((np.array([4, -2]), np.resize([0, -0.1, 0, 0.1], 100)))
-            # score5 = beta5[0] + beta5[1]*treat + np.matmul(x, beta5[2:])  # R4|X, A
-            # prob5 = np.exp(score5)/(1+np.exp(score5))
-            # obs_ind5 = bernoulli.rvs(p=prob5)  # 1 is observed and 0 is missing
-
         elif miss_pattern == 'mar':  # randomly delete 10% of the data entries in training set
             # for x1
             obs_ind1 = np.array([0]*1000 + [1]*11000)
@@ -433,10 +449,6 @@ class SimData_Missing(Dataset):
             obs_ind4 = np.array([0]*1000 + [1]*11000)
             np.random.shuffle(obs_ind4)
 
-            # # for x5
-            # obs_ind5 = np.array([0]*1000 + [1]*11000)
-            # np.random.shuffle(obs_ind5)
-
         self.obs_idx1 = np.array(np.nonzero(obs_ind1)).flatten()
         self.mis_idx1 = np.array(np.nonzero(1-obs_ind1)).flatten()
         x[self.mis_idx1, 0] = np.nan
@@ -445,12 +457,7 @@ class SimData_Missing(Dataset):
         self.mis_idx4 = np.array(np.nonzero(1-obs_ind4)).flatten()
         x[self.mis_idx4, 3] = np.nan
 
-        # self.obs_idx5 = np.array(np.nonzero(obs_ind5)).flatten()
-        # self.mis_idx5 = np.array(np.nonzero(1 - obs_ind5)).flatten()
-        # x[self.mis_idx5, 4] = np.nan
-
         miss_ind = np.stack((1-obs_ind1, 1-obs_ind4), axis=1)
-        # miss_ind = np.stack((1-obs_ind1, 1-obs_ind5), axis=1)
 
         self.x = torch.FloatTensor(x).to(device)
         self.treat = torch.FloatTensor(treat).to(device)
@@ -469,58 +476,3 @@ class SimData_Missing(Dataset):
         miss_ind = self.miss_ind[idx]
         return y, treat, x, miss_ind, y_count
 
-
-# class SimData_Missing_test(Dataset):
-#     def __init__(self, seed):
-#         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#
-#         # load covariates
-#         csv_name = 'covariates_' + str(seed) + '.csv'
-#         x = np.loadtxt(os.path.join('./raw_data/sim_missing', csv_name), delimiter=",", skiprows=1)
-#         self.data_size = x.__len__()
-#
-#         np.random.seed(seed)
-#         torch.manual_seed(seed)
-#         # nodes in the first hidden layer
-#         h11 = np.tanh(2*x[:, 0]+1*x[:, 3])
-#         h12 = np.tanh(-x[:, 0]-2*x[:, 4])
-#         h13 = np.tanh(2*x[:, 1]-2*x[:, 2])
-#         h14 = np.tanh(-2*x[:, 3]+1*x[:, 4])
-#
-#         # nodes in the second hidden layer
-#         h21 = np.tanh(-2*h11+h13)
-#         h22 = h12-h13
-#         h23 = np.tanh(h13-2*h14)
-#
-#         # generate treatment
-#         prob = np.exp(h22)/(1 + np.exp(h22))
-#         treat = bernoulli.rvs(p=prob)
-#
-#         # nodes in the third hidden layer
-#         h31 = np.tanh(1*h21-2*treat)
-#         h32 = np.tanh(-1*treat+2*h23)
-#
-#         # counterfactual nodes in the third hidden layer
-#         h31_count = np.tanh(1*h21-2*(1-treat))
-#         h32_count = np.tanh(-1*(1-treat)+2*h23)
-#
-#         # generate outcome variable
-#         y = -4*h31+2*h32 + np.random.normal(0, 1)
-#
-#         # generate counterfactual outcome variable
-#         y_count = -4*h31_count+2*h32_count + np.random.normal(0, 1)
-#
-#         self.x = torch.FloatTensor(x).to(self.device)
-#         self.treat = torch.FloatTensor(treat).to(self.device)
-#         self.y = torch.FloatTensor(y).reshape(self.data_size, 1).to(self.device)
-#         self.y_count = torch.FloatTensor(y_count).reshape(self.data_size, 1).to(self.device)
-#
-#     def __len__(self):
-#         return int(self.data_size)
-#
-#     def __getitem__(self, idx):
-#         y = self.y[idx]
-#         x = self.x[idx]
-#         treat = self.treat[idx]
-#         y_count = self.y_count[idx]
-#         return y, treat, x, y_count
