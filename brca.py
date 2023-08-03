@@ -11,6 +11,7 @@ from torch.optim import SGD
 from sklearn.utils import class_weight
 import pickle
 from pickle import dump
+import torch.nn as nn
 
 parser = argparse.ArgumentParser(description='Run Causal StoNet for BRCA data')
 # Basic Setting
@@ -67,7 +68,7 @@ def main():
     # dataset preprocessing
     data = BRCA()
     if classification_flag:
-        class_weights_out = class_weight.compute_class_weight(class_weight='balanced',classes=np.unique(data.y),
+        class_weights_out = class_weight.compute_class_weight(class_weight='balanced', classes=np.unique(data.y),
                                                               y=data.y.numpy())
         class_weights_out = torch.tensor(class_weights_out, dtype=torch.float)
     cross_fit_no = args.cross_fit_no
@@ -227,8 +228,8 @@ def main():
         net.prune_masked_para()
 
         # save model training results
-        num_selection_out = num_gamma_out_train[training_epochs-1]
-        num_selection_treat = num_gamma_treat_train[training_epochs-1]
+        num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs-1]
+        num_selection_treat_list[prune_seed] = num_gamma_treat_train[training_epochs-1]
 
         temp_str = [str(int(x)) for x in var_gamma_out_train[str(training_epochs-1)]]
         temp_str = ' '.join(temp_str)
@@ -298,44 +299,63 @@ def main():
         # num_gamma_file.close()
 
         # save training results for the final run
-        out_train_loss = performance_fine_tune['out_train_loss'][-1]
-        out_val_loss= performance_fine_tune['out_val_loss'][-1]
+        out_train_loss_list[prune_seed] = performance_fine_tune['out_train_loss'][-1]
+        out_val_loss_list[prune_seed] = performance_fine_tune['out_val_loss'][-1]
         if classification_flag:
-            out_train_acc = performance_fine_tune['out_train_acc'][-1]
-            out_val_acc = performance_fine_tune['out_val_acc'][-1]
+            out_train_acc_list[prune_seed] = performance_fine_tune['out_train_acc'][-1]
+            out_val_acc_list[prune_seed] = performance_fine_tune['out_val_acc'][-1]
 
-        treat_train_loss = performance_fine_tune['treat_train_loss'][-1]
-        treat_val_loss = performance_fine_tune['treat_val_loss'][-1]
-        treat_train_acc = performance_fine_tune['treat_train_acc'][-1]
-        treat_val_acc = performance_fine_tune['treat_val_acc'][-1]
+        treat_train_loss_list[prune_seed] = performance_fine_tune['treat_train_loss'][-1]
+        treat_val_loss_list[prune_seed] = performance_fine_tune['treat_val_loss'][-1]
+        treat_train_acc_list[prune_seed] = performance_fine_tune['treat_train_acc'][-1]
+        treat_val_acc_list[prune_seed] = performance_fine_tune['treat_val_acc'][-1]
 
         # calculate non-zero connections and BIC
         with torch.no_grad():
             num_non_zero_element = 0
             for name, para in net.named_parameters():
                 num_non_zero_element = num_non_zero_element + para.numel() - net.mask_prune[name].sum()
-            dim = num_non_zero_element
+            dim_list[prune_seed] = num_non_zero_element
 
             BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
+            BIC_list[prune_seed] = BIC
 
             print("number of non-zero connections:", num_non_zero_element.item())
             print('BIC:', BIC)
 
+        # calculate doubly-robust estimator of ate: when the outcome variable is binary
+        m = nn.Softmax(dim=1)
+        with torch.no_grad():
+            ate_db = 0  # doubly-robust estimate of average treatment effect
+            for y, treat, x in val_data:
+                pred_score, prop_score = net.forward(x, treat)
+                pred_prob = m(pred_score)[:, 1]  # E[Y|X, A] = P(Y=1|X, A)
+                counter_fact_score, _ = net.forward(x, 1 - treat)
+                counter_fact_prob = m(counter_fact_score)[:, 1]
+                outcome_contrast = torch.flatten(pred_prob-counter_fact_prob) * (2*treat - 1)
+                prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
+                pred_resid = torch.flatten(y - pred_prob)
+                ate_db += torch.sum(outcome_contrast + prop_contrast * pred_resid).item()
+
+            ate_list[prune_seed] = ate_db/len(val_set)
+
         torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
 
     # save overall performance
-    # training results containers
-    results = dict(dim=dim, out_train_loss=out_train_loss, out_val_loss=out_val_loss, out_train_acc=out_train_acc,
-                   out_val_acc=out_val_acc, treat_train_loss=treat_train_loss, treat_val_loss=treat_val_loss,
-                   treat_train_acc=treat_train_acc, treat_val_acc=treat_val_acc)
-    with open(os.path.join(PATH, 'results'+ str(prune_seed) +'.pkl'), 'wb') as f:
-        pickle.dump(results, f)
-
-    np.savetxt(os.path.join(PATH, 'BIC' + str(prune_seed) + '.txt'), np.array([BIC]), fmt="%s")
-    np.savetxt(os.path.join(PATH, 'num_selected_variables_out'+ str(prune_seed) + '.txt'),
-               np.array([num_selection_out]), fmt="%s")
-    np.savetxt(os.path.join(PATH, 'num_selected_variables_treat'+ str(prune_seed) +'.txt'),
-               np.array([num_selection_treat]), fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_train_loss_out.txt'), out_train_loss_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_val_loss_out.txt'), out_val_loss_list, fmt="%s")
+    if classification_flag:
+        np.savetxt(os.path.join(base_path, 'Overall_train_acc_out.txt'), out_train_acc_list, fmt="%s")
+        np.savetxt(os.path.join(base_path, 'Overall_val_acc_out.txt'), out_val_acc_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_train_loss_treat.txt'), treat_train_loss_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_val_loss_treat.txt'), treat_val_loss_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_train_acc_treat.txt'), treat_train_acc_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_val_acc_treat.txt'), treat_val_acc_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_BIC.txt'), BIC_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_non_zero_connections.txt'), dim_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_selected_variables_out.txt'), num_selection_out_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_selected_variables_treat.txt'), num_selection_treat_list, fmt="%s")
+    np.savetxt(os.path.join(base_path, 'Overall_ATE.txt'), ate_list, fmt="%s")
 
     # save scalars
     dump(x_scalar, open(os.path.join(PATH, 'x_scalar.pkl'), 'wb'))
