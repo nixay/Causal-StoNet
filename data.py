@@ -1,6 +1,6 @@
 from scipy.stats import truncnorm, bernoulli
 from torch.utils.data import Dataset, random_split, ConcatDataset, Subset
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import RobustScaler, StandardScaler
 import numpy as np
 import pandas as pd
 import torch
@@ -44,8 +44,8 @@ def data_preprocess(data, partition_seed, cross_fit_no, cross_val=3, x_scale=Tru
     val_indices = val_set.indices
     train_indices = list(np.concatenate([cross_fit_set[i].indices for i in range(cross_val-1)]).flat)
 
-    x_scalar = RobustScaler()
-    y_scalar = RobustScaler()
+    x_scalar = StandardScaler()  # note that for pension RobustScaler is used
+    y_scalar = StandardScaler()
 
     if x_scale:
         x_scalar.fit(data.num_var[train_indices])
@@ -356,13 +356,14 @@ class BRCA(Dataset):
 
         data = pd.read_csv("./raw_data/tcga/brca_data.csv")
         num_col = ['years_to_birth', 'date_of_initial_pathologic_diagnosis', 'number_of_lymph_nodes'] + \
-                  data.columns[21:].to_list()
+                  data.columns[23:].to_list()
         self.data_size = len(data.index)
 
         self.y = torch.FloatTensor(np.array(data['vital_status'])).long().to(self.device)
         self.treat = torch.FloatTensor(np.array(data['radiation_therapy'], dtype=np.float32)).to(self.device)
         self.num_var = np.array(data[num_col], dtype=np.float32)
-        self.cat_var = np.array(data.loc[:, ~data.columns.isin(['vital_status', 'radiation_therapy', *num_col])], dtype=np.float32)
+        self.cat_var = np.array(data.loc[:, ~data.columns.isin(['vital_status', 'radiation_therapy', 'days_to_death',
+                                                                'days_to_last_followup', *num_col])], dtype=np.float32)
 
     def __len__(self):
         return int(self.data_size)
