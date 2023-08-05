@@ -477,3 +477,47 @@ class SimData_Missing(Dataset):
         miss_ind = self.miss_ind[idx]
         return y, treat, x, miss_ind, y_count
 
+
+class acic_bench(Dataset):
+    """
+    Load ACIC data for experimental benchmark
+    need to scale the numerical variables
+    """
+    def __init__(self, mode='train'):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        if mode == 'train':
+            csv_name = 'high1601.csv'
+        elif mode == 'test':
+            csv_name = 'highDim_testdataset1.csv'
+        csv_dir = os.path.join('./raw_data/acic_bench', csv_name)
+        data = pd.read_csv(csv_dir)
+
+        self.data_size = len(data.index)
+
+        # extract column names for binary variables
+        bin_col = []
+        for col in data.columns:
+            if len(data[col].unique()) == 2:
+                bin_col.append(col)
+        bin_col = bin_col[2:]
+
+        self.y = torch.FloatTensor(np.array(data['Y'], dtype=np.float32)).long().to(self.device)
+        self.treat = torch.FloatTensor(np.array(data['A'], dtype=np.float32)).to(self.device)
+
+        # standardize covariates
+        bin_var = np.array(data[bin_col], dtype=np.float32)
+        num_var = np.array(data.loc[:, ~data.columns.isin(['Y', 'A', *bin_col])], dtype=np.float32)
+        x_scalar = StandardScaler()
+        x_scalar.fit(num_var)
+        num_var = np.array(x_scalar.transform(num_var))
+        self.x = torch.FloatTensor(np.concatenate((num_var, bin_var), axis=1)).to(self.device)
+
+    def __len__(self):
+        return int(self.data_size)
+
+    def __getitem__(self, idx):
+        y = self.y[idx]
+        treat = self.treat[idx]
+        x = self.x[idx]
+        return y, treat, x
