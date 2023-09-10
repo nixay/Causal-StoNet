@@ -160,15 +160,15 @@ def main():
         for i in range(net.num_hidden + 1):
             # set maximize = True to do gradient ascent
             optimizer_list_train1.append(SGD(net.module_list[i].parameters(), lr=para_lrs_train[i],
-                                            momentum=para_momentum, maximize=True))
+                                             momentum=para_momentum, maximize=True))
 
-        # optimizer_list_train2 = []
-        # for l in range(net.num_hidden + 1):
-        #     for k in range(training_epochs):
-        #         para_lrs_train_temp = para_lrs_train[l]/(1+para_lrs_train[l]*k**para_lr_decay)
-        #     # set maximize = True to do gradient ascent
-        #     optimizer_list_train2.append(SGD(net.module_list[l].parameters(), lr=para_lrs_train_temp/2,
-        #                                      momentum=para_momentum, maximize=True))
+        optimizer_list_train2 = []
+        for l in range(net.num_hidden + 1):
+            for k in range(training_epochs):
+                para_lrs_train_temp = para_lrs_train[l]/(1+para_lrs_train[l]*k**para_lr_decay)
+            # set maximize = True to do gradient ascent
+            optimizer_list_train2.append(SGD(net.module_list[l].parameters(), lr=para_lrs_train_temp/2,
+                                             momentum=para_momentum, maximize=True))
 
         optimizer_list_fine_tune = []
         for j in range(net.num_hidden + 1):
@@ -197,29 +197,29 @@ def main():
             dump(performance_pretrain, f)
 
         # train
-        # print("Train 1")
-        # output_train1 = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train1,
-        #                         impute_lrs=impute_lrs, **optim_args)
-        # para_train1 = output_train1["para_path"]
-        # # num_gamma_out_train1 = output_train1["input_gamma_path"]["num_selected_out"]
-        # # num_gamma_treat_train1 = output_train1["input_gamma_path"]["num_selected_treat"]
-        # performance_train1 = output_train1["performance"]
-        # impute_lrs_train2 = output_train1["impute_lrs"]
-        #
-        # # prune network parameters
-        # with torch.no_grad():
-        #     for name, para in net.named_parameters():
-        #         para.data = torch.FloatTensor(para_train1[str(training_epochs-1)][name]).to(device)
-        #
-        # user_mask = {}
-        # for name, para in net.named_parameters():
-        #     user_mask[name] = para.abs() < threshold
-        # net.set_prune(user_mask)
-        # net.prune_masked_para()
-        #
-        # # save training result
-        # with open(os.path.join(PATH, 'performance_train1.pkl'), "wb") as f:
-        #     dump(performance_train1, f)
+        print("Train 1")
+        output_train1 = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train1,
+                                 impute_lrs=impute_lrs, **optim_args)
+        para_train1 = output_train1["para_path"]
+        # num_gamma_out_train1 = output_train1["input_gamma_path"]["num_selected_out"]
+        # num_gamma_treat_train1 = output_train1["input_gamma_path"]["num_selected_treat"]
+        performance_train1 = output_train1["performance"]
+        impute_lrs_train2 = output_train1["impute_lrs"]
+
+        # prune network parameters
+        with torch.no_grad():
+            for name, para in net.named_parameters():
+                para.data = torch.FloatTensor(para_train1[str(training_epochs-1)][name]).to(device)
+
+        user_mask = {}
+        for name, para in net.named_parameters():
+            user_mask[name] = para.abs() < threshold
+        net.set_prune(user_mask)
+        net.prune_masked_para()
+
+        # save training result
+        with open(os.path.join(PATH, 'performance_train1.pkl'), "wb") as f:
+            dump(performance_train1, f)
 
         # with open(os.path.join(PATH, 'num_selected_out_train1.pkl'), "wb") as f:
         #     dump(num_gamma_out_train1, f)
@@ -227,34 +227,10 @@ def main():
         # with open(os.path.join(PATH, 'num_selected_treat_train1.pkl'), "wb") as f:
         #     dump(num_gamma_treat_train1, f)
 
-        # print("Train 2")
-        # output_train = training(mode="train", net=net, epochs=training_epochs*2, optimizer_list=optimizer_list_train2,
-        #                         impute_lrs=impute_lrs_train2, **optim_args)
-        # para_train = output_train["para_path"]
-        # var_gamma_out_train = output_train["input_gamma_path"]["var_selected_out"]
-        # num_gamma_out_train = output_train["input_gamma_path"]["num_selected_out"]
-        # var_gamma_treat_train = output_train["input_gamma_path"]["var_selected_treat"]
-        # num_gamma_treat_train = output_train["input_gamma_path"]["num_selected_treat"]
-        # performance_train = output_train["performance"]
-        # impute_lrs_fine_tune = output_train["impute_lrs"]
-
-        # print("Train 2")
-        # output_train = training(mode="train", net=net, epochs=training_epochs*2, optimizer_list=optimizer_list_train2,
-        #                         impute_lrs=impute_lrs_train2, **optim_args)
-        # para_train = output_train["para_path"]
-        # var_gamma_out_train = output_train["input_gamma_path"]["var_selected_out"]
-        # num_gamma_out_train = output_train["input_gamma_path"]["num_selected_out"]
-        # var_gamma_treat_train = output_train["input_gamma_path"]["var_selected_treat"]
-        # num_gamma_treat_train = output_train["input_gamma_path"]["num_selected_treat"]
-        # performance_train = output_train["performance"]
-        # impute_lrs_fine_tune = output_train["impute_lrs"]
-
-        print("Train")
-        output_train = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train1,
-                                impute_lrs=impute_lrs, **optim_args)
+        print("Train 2")
+        output_train = training(mode="train", net=net, epochs=training_epochs*2, optimizer_list=optimizer_list_train2,
+                                impute_lrs=impute_lrs_train2, **optim_args)
         para_train = output_train["para_path"]
-        para_grad_train = output_train["para_grad_path"]
-        #para_gamma_train = output_train["para_gamma_path"]
         var_gamma_out_train = output_train["input_gamma_path"]["var_selected_out"]
         num_gamma_out_train = output_train["input_gamma_path"]["num_selected_out"]
         var_gamma_treat_train = output_train["input_gamma_path"]["var_selected_treat"]
@@ -265,7 +241,7 @@ def main():
         # prune network parameters
         with torch.no_grad():
             for name, para in net.named_parameters():
-                para.data = torch.FloatTensor(para_train[str(training_epochs-1)][name]).to(device)
+                para.data = torch.FloatTensor(para_train[str(training_epochs*2-1)][name]).to(device)
 
         user_mask = {}
         for name, para in net.named_parameters():
@@ -274,17 +250,17 @@ def main():
         net.prune_masked_para()
 
         # save model training results
-        num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs-1]
-        num_selection_treat_list[prune_seed] = num_gamma_treat_train[training_epochs-1]
+        num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs*2-1]
+        num_selection_treat_list[prune_seed] = num_gamma_treat_train[training_epochs*2-1]
 
-        temp_str = [str(int(x)) for x in var_gamma_out_train[str(training_epochs-1)]]
+        temp_str = [str(int(x)) for x in var_gamma_out_train[str(training_epochs*2-1)]]
         temp_str = ' '.join(temp_str)
         filename = PATH + 'selected_variable_out.txt'
         f = open(filename, 'w')
         f.write(temp_str)
         f.close()
 
-        temp_str = [str(int(x)) for x in var_gamma_treat_train[str(training_epochs-1)]]
+        temp_str = [str(int(x)) for x in var_gamma_treat_train[str(training_epochs*2-1)]]
         temp_str = ' '.join(temp_str)
         filename = PATH + 'selected_variable_treat.txt'
         f = open(filename, 'w')
