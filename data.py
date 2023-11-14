@@ -44,7 +44,7 @@ def data_preprocess(data, partition_seed, cross_fit_no, cross_val=3, x_scale=Tru
     val_indices = val_set.indices
     train_indices = list(np.concatenate([cross_fit_set[i].indices for i in range(cross_val-1)]).flat)
 
-    x_scalar = StandardScaler()  # note that for pension RobustScaler is used
+    x_scalar = StandardScaler()
     y_scalar = StandardScaler()
 
     if x_scale:

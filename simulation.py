@@ -137,7 +137,7 @@ def main():
     ate_list = np.zeros([num_seed])
 
     # path to save the result
-    base_path = os.path.join('.', 'simulation', 'result', data_name, str(data_seed))
+    base_path = os.path.join('.', 'simulation', 'result', str(train_size), str(data_seed))
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(treat_loss_weight)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
