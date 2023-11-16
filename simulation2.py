@@ -330,7 +330,7 @@ def main():
         # calculate doubly-robust estimator of ate
         with torch.no_grad():
             ate_db = 0  # doubly-robust estimate of average treatment effect
-            for y, treat, x, _ in test_data:
+            for y, treat, x in test_data:
                 pred, prop_score = net.forward(x, treat)
                 counter_fact, _ = net.forward(x, 1 - treat)
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
