@@ -521,3 +521,29 @@ class acic_bench(Dataset):
         treat = self.treat[idx]
         x = self.x[idx]
         return y, treat, x
+
+
+class Simulation2(Dataset):
+    """
+    load dataset for simulation 2
+    no need to do data preprocessing
+    """
+    def __init__(self, data_name, dgp):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        file_name = data_name + '_' + str(dgp) + '.csv'
+        data = pd.read_csv(os.path.join("./raw_data/simulation2", file_name))
+        self.data_size = len(data.index)
+
+        self.y = torch.FloatTensor(np.array(data['y']).reshape(self.data_size, 1)).to(device)
+        self.treat = torch.FloatTensor(np.array(data['treat'], dtype=np.float32)).to(device)
+        self.x = torch.FloatTensor(np.array(data.loc[:, ~data.columns.isin(['y', 'treat', 'tau'])], dtype=np.float32)).to(device)
+
+    def __len__(self):
+        return int(self.data_size)
+
+    def __getitem__(self, idx):
+        y = self.y[idx]
+        treat = self.treat[idx]
+        x = self.x[idx]
+        return y, treat, x
