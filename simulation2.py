@@ -10,6 +10,8 @@ import errno
 from torch.optim import SGD
 import json
 from pickle import dump
+from sklearn.utils import class_weight
+
 
 parser = argparse.ArgumentParser(description='Run Simulation for Causal StoNet')
 # Basic Setting
@@ -68,8 +70,10 @@ def main():
     # generate dataset
     data_name = args.data_name
     data_seed = args.data_seed
-
     data = Simulation2(data_name, data_seed)
+
+    class_weights_treat = sum(1-data.treat)/sum(data.treat)
+
     train_size = int(data.data_size/1.4)
     train_set, val_set, test_set= random_split(data, [train_size, int(train_size*0.2), int(train_size*0.2)],
                                                generator=torch.Generator().manual_seed(args.partition_seed))
@@ -84,12 +88,12 @@ def main():
     # network setup
     net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=data.x[0].size(dim=0),
                     output_dim=len(data.y.unique()) if classification_flag else 1,
-                    treat_layer=args.depth, treat_node=args.treat_node)
+                    treat_layer=args.depth, treat_node=args.treat_node, CE_treat_weight=class_weights_treat)
 
     # set number of independent runs for sparsity
     num_seed = args.num_run
 
-    # training setting
+    # training settin
     para_lrs_train = args.para_lr_train
     para_lrs_fine_tune = args.para_lr_fine_tune
     para_momentum = args.para_momentum

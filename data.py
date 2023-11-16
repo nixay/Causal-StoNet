@@ -7,11 +7,6 @@ import torch
 import os
 
 
-def true_ate(y, treat, y_count):
-    ate = torch.mean(torch.flatten((y - y_count)) * (2*treat-1))
-    return ate
-
-
 def prune_threshold(sigma_0, sigma_1, lambda_n):
     threshold = np.sqrt(np.log((1 - lambda_n) / lambda_n * np.sqrt(sigma_1 / sigma_0)) / (
             0.5 / sigma_0 - 0.5 / sigma_1))
@@ -106,8 +101,8 @@ class SimData_Causal(Dataset):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         one_count, zero_count = 0, 0  # count of the samples in treatment group and control group, respectively
-        one_treat, one_x, one_y, one_y_count = ([] for _ in range(4))
-        zero_treat, zero_x, zero_y, zero_y_count = ([] for _ in range(4))
+        one_treat, one_x, one_y, one_tau_count = ([] for _ in range(4))
+        zero_treat, zero_x, zero_y, zero_tau_count = ([] for _ in range(4))
 
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -143,30 +138,32 @@ class SimData_Causal(Dataset):
             h31_count = np.tanh(1*h21-2*(1-treat_temp))
             h32_count = np.tanh(-1*(1-treat_temp)+2*h23)
 
-            # generate outcome variable
-            y_temp = -4*h31+2*h32 + np.random.normal(0, 1)
+            # generate true treatment effect
+            y_temp = -4*h31+2*h32
+            y_count_temp = -4*h31_count+2*h32_count
+            tau = (y_temp-y_count_temp) *(2*treat_temp-1)
 
-            # generate counterfactual outcome variable
-            y_count_temp = -4*h31_count+2*h32_count + np.random.normal(0, 1)
+            # generate outcome
+            y_temp = y_temp + np.random.normal(0, 1)
 
             if treat_temp == 1:
                 one_count += 1
                 one_x.append(x_temp)
                 one_y.append(y_temp)
                 one_treat.append(treat_temp)
-                one_y_count.append(y_count_temp)
+                one_tau_count.append(tau)
             else:
                 zero_count += 1
                 zero_x.append(x_temp)
                 zero_y.append(y_temp)
                 zero_treat.append(treat_temp)
-                zero_y_count.append(y_count_temp)
+                zero_tau_count.append(tau)
 
         self.x = torch.FloatTensor(np.array(one_x[:(data_size // 2)] + zero_x[:(data_size // 2)])).to(device)
         self.y = torch.FloatTensor(np.array(one_y[:(data_size // 2)] + zero_y[:(data_size // 2)]).
                                    reshape(self.data_size, 1)).to(device)
         self.treat = torch.FloatTensor(np.array(one_treat[:(data_size // 2)] + zero_treat[:(data_size // 2)])).to(device)
-        self.y_count = torch.FloatTensor(np.array(one_y_count[:(data_size // 2)] + zero_y_count[:(data_size // 2)]).
+        self.tau = torch.FloatTensor(np.array(one_tau_count[:(data_size // 2)] + zero_tau_count[:(data_size // 2)]).
                                          reshape(self.data_size, 1)).to(device)
 
     def __len__(self):
@@ -176,8 +173,8 @@ class SimData_Causal(Dataset):
         y = self.y[idx]
         x = self.x[idx]
         treat = self.treat[idx]
-        y_count = self.y_count[idx]
-        return y, treat, x, y_count
+        tau = self.tau[idx]
+        return y, treat, x, tau
 
 
 # ACIC Dataset with Continuous Variable and Homogeneous Treatment Effect
@@ -421,11 +418,13 @@ class SimData_Missing(Dataset):
         h31_count = np.tanh(1*h21-2*(1-treat))
         h32_count = np.tanh(-1*(1-treat)+2*h23)
 
-        # generate outcome variable
-        y = -4*h31+2*h32 + np.random.normal(0, 1)
+        # generate treatment effect
+        y = -4*h31+2*h32
+        y_count = -4*h31_count+2*h32_count
+        tau = (y-y_count) * (2*treat-1)
 
-        # generate counterfactual outcome variable
-        y_count = -4*h31_count+2*h32_count + np.random.normal(0, 1)
+        # generate outcome variable
+        y = y + np.random.normal(0, 1)
 
         # generate missing values: note that only x1 and x4 has missing values
         if miss_pattern == 'mnar':  # generates observed indicator
@@ -463,7 +462,7 @@ class SimData_Missing(Dataset):
         self.x = torch.FloatTensor(x).to(device)
         self.treat = torch.FloatTensor(treat).to(device)
         self.y = torch.FloatTensor(y).reshape(self.data_size, 1).to(device)
-        self.y_count = torch.FloatTensor(y_count).reshape(self.data_size, 1).to(device)
+        self.tau = torch.FloatTensor(tau).reshape(self.data_size, 1).to(device)
         self.miss_ind = torch.FloatTensor(miss_ind).to(device)
 
     def __len__(self):
@@ -473,9 +472,9 @@ class SimData_Missing(Dataset):
         y = self.y[idx]
         x = self.x[idx]
         treat = self.treat[idx]
-        y_count = self.y_count[idx]
+        tau = self.tau[idx]
         miss_ind = self.miss_ind[idx]
-        return y, treat, x, miss_ind, y_count
+        return y, treat, x, miss_ind, tau
 
 
 class acic_bench(Dataset):
@@ -532,7 +531,7 @@ class Simulation2(Dataset):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         file_name = data_name + '_' + str(dgp) + '.csv'
-        data = pd.read_csv(os.path.join("./raw_data/simulation2", file_name))
+        data = pd.read_csv(os.path.join("./benchmark/sim", file_name))
         self.data_size = len(data.index)
 
         self.y = torch.FloatTensor(np.array(data['y']).reshape(self.data_size, 1)).to(device)
