@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(description='Run Simulation for Causal StoNet')
 # simulation setting
 parser.add_argument('--data_seed', default=1, type=int, help='set seed for data generation')
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
-parser.add_argument('--data_name', default='sim2_800', type=str, help='name of simulation dataset')
+parser.add_argument('--data_name', default='sim2800', type=str, help='name of simulation dataset')
 
 # dataset setting
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
