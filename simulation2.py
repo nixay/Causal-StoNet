@@ -1,6 +1,6 @@
 from model.network import StoNet_Causal
 from model.training import training
-from data import Simulation2
+from data import Simulation, data_preprocess
 from torch.utils.data import DataLoader, random_split
 import torch
 import numpy as np
@@ -10,7 +10,7 @@ import errno
 from torch.optim import SGD
 import json
 from pickle import dump
-from sklearn.utils import class_weight
+from collections import deque
 
 
 parser = argparse.ArgumentParser(description='Run Simulation for Causal StoNet')
@@ -18,16 +18,17 @@ parser = argparse.ArgumentParser(description='Run Simulation for Causal StoNet')
 # simulation setting
 parser.add_argument('--data_seed', default=1, type=int, help='set seed for data generation')
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
-parser.add_argument('--data_name', default='sim2800', type=str, help='name of simulation dataset')
+parser.add_argument('--train_size', default='800', type=int, help='sample size for the training set')
 
 # dataset setting
+parser.add_argument('--input_size', default='1000', type=int, help='dimension of covariates')
 parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
-parser.add_argument('--batch_size', default=50, type=int, help='batch size')
+parser.add_argument('--batch_size', default=32, type=int, help='batch size')
 
 # Parameter for StoNet
 # model
 parser.add_argument('--layer', default=3, type=int, help='number of hidden layers')
-parser.add_argument('--unit', default=[6, 4, 3], type=int, nargs='+', help='number of hidden unit in each layer')
+parser.add_argument('--unit', default=[16, 8, 4], type=int, nargs='+', help='number of hidden unit in each layer')
 parser.add_argument('--sigma', default=[1e-3, 1e-5, 1e-7, 1e-9], type=float, nargs='+',
                     help='variance of each layer for the model')
 parser.add_argument('--depth', default=1, type=int, help='number of layers before the treatment layer')
@@ -68,14 +69,10 @@ def main():
     classification_flag = args.classification_flag
 
     # generate dataset
-    data_name = args.data_name
     data_seed = args.data_seed
-    data = Simulation2(data_name, data_seed)
-
-    class_weights_treat = sum(1-data.treat)/sum(data.treat)
-
-    train_size = int(data.data_size/1.4)
-    train_set, val_set, test_set= random_split(data, [train_size, int(train_size*0.2), int(train_size*0.2)],
+    train_size = args.train_size
+    data = Simulation(args.input_size, int(train_size*1.5), data_seed)
+    train_set, val_set, test_set = random_split(data, [train_size, int(train_size*0.25), int(train_size*0.25)],
                                                generator=torch.Generator().manual_seed(args.partition_seed))
 
     # load training data and validation data
@@ -86,14 +83,14 @@ def main():
     test_data = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
     # network setup
-    net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=data.x[0].size(dim=0),
+    net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=args.input_size,
                     output_dim=len(data.y.unique()) if classification_flag else 1,
-                    treat_layer=args.depth, treat_node=args.treat_node, CE_treat_weight=class_weights_treat)
+                    treat_layer=args.depth, treat_node=args.treat_node)
 
     # set number of independent runs for sparsity
     num_seed = args.num_run
 
-    # training settin
+    # training setting
     para_lrs_train = args.para_lr_train
     para_lrs_fine_tune = args.para_lr_fine_tune
     para_momentum = args.para_momentum
@@ -119,23 +116,14 @@ def main():
             0.5 / prior_sigma_0 - 0.5 / prior_sigma_1))
 
     # training results containers
-    dim_list = np.zeros([num_seed])  # total number of non-zero element of the pruned network
-    BIC_list = np.zeros([num_seed])  # BIC value for model selection
-    num_selection_out_list = np.zeros([num_seed])  # number of selected input for outcome variable
-    num_selection_treat_list = np.zeros([num_seed])  # number of selected input for treatment
-    out_train_loss_list = np.zeros([num_seed])
-    out_val_loss_list = np.zeros([num_seed])
+    results = dict(dim=0, BIC=0, num_selection_out=0, num_selection_treat=0, out_train_loss=0, out_val_loss=0,
+                   treat_train_loss=0, treat_val_loss=0, treat_train_acc=0, treat_val_acc=0, ate=0)
+    BIC_list = deque([])  # BIC value for model selection
     if classification_flag:
-        out_train_acc_list = np.zeros([num_seed])
-        out_val_acc_list = np.zeros([num_seed])
-    treat_train_loss_list = np.zeros([num_seed])
-    treat_val_loss_list = np.zeros([num_seed])
-    treat_train_acc_list = np.zeros([num_seed])
-    treat_val_acc_list = np.zeros([num_seed])
-    ate_list = np.zeros([num_seed])
+        results.update([('out_train_acc', 0), ('out_val_acc', 0)])
 
     # path to save the result
-    base_path = os.path.join('.', 'simulation2', 'result', data_name, str(data_seed))
+    base_path = os.path.join('.', 'simulation2', 'result', str(train_size), str(data_seed))
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(treat_loss_weight)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
@@ -145,7 +133,7 @@ def main():
     for prune_seed in range(num_seed):
         print('number of runs', prune_seed)
 
-        PATH = os.path.join(base_path, str(prune_seed))
+        PATH = os.path.join(base_path)
         if not os.path.isdir(PATH):
             try:
                 os.makedirs(PATH)
@@ -183,19 +171,19 @@ def main():
         print("Pretrain")
         output_pretrain = training(mode="pretrain", net=net, epochs=pretrain_epochs, optimizer_list=optimizer_list_train,
                                    impute_lrs=impute_lrs, **optim_args)
-        # para_pretrain = output_pretrain["para_path"]
-        # para_grad_pretrain = output_pretrain["para_grad_path"]
+        para_pretrain = output_pretrain["para_path"]
+        para_grad_pretrain = output_pretrain["para_grad_path"]
         # para_gamma_pretrain = output_pretrain["para_gamma_path"]
         performance_pretrain = output_pretrain["performance"]
 
         # with open(os.path.join(PATH, 'para_gamma_pretrain.pkl'), "wb") as f:
         #     dump(para_gamma_pretrain, f)
 
-        # with open(os.path.join(PATH, 'para_pretrain.pkl'), "wb") as f:
-        #     dump(para_pretrain, f)
+        with open(os.path.join(PATH, 'para_pretrain.pkl'), "wb") as f:
+            dump(para_pretrain, f)
 
-        # with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "wb") as f:
-        #     dump(para_grad_pretrain, f)
+        with open(os.path.join(PATH, 'para_grad_pretrain.pkl'), "wb") as f:
+            dump(para_grad_pretrain, f)
 
         with open(os.path.join(PATH, 'performance_pretrain.pkl'), "wb") as f:
             dump(performance_pretrain, f)
@@ -205,7 +193,7 @@ def main():
         output_train = training(mode="train", net=net, epochs=training_epochs, optimizer_list=optimizer_list_train,
                                 impute_lrs=impute_lrs, **optim_args)
         para_train = output_train["para_path"]
-        # para_grad_train = output_train["para_grad_path"]
+        para_grad_train = output_train["para_grad_path"]
         # para_gamma_train = output_train["para_gamma_path"]
         var_gamma_out_train = output_train["input_gamma_path"]["var_selected_out"]
         num_gamma_out_train = output_train["input_gamma_path"]["num_selected_out"]
@@ -226,9 +214,6 @@ def main():
         net.prune_masked_para()
 
         # save model training results
-        num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs-1]
-        num_selection_treat_list[prune_seed] = num_gamma_treat_train[training_epochs-1]
-
         temp_str = [str(int(x)) for x in var_gamma_out_train[str(training_epochs-1)]]
         temp_str = ' '.join(temp_str)
         filename = PATH + 'selected_variable_out.txt'
@@ -246,11 +231,11 @@ def main():
         # with open(os.path.join(PATH, 'para_gamma_train.pkl'), "wb") as f:
         #     dump(para_gamma_train, f)
 
-        # with open(os.path.join(PATH, 'para_train.pkl'), "wb") as f:
-        #     dump(para_train, f)
+        with open(os.path.join(PATH, 'para_train.pkl'), "wb") as f:
+            dump(para_train, f)
 
-        # with open(os.path.join(PATH, 'para_grad_train.pkl'), "wb") as f:
-        #     dump(para_grad_train, f)
+        with open(os.path.join(PATH, 'para_grad_train.pkl'), "wb") as f:
+            dump(para_grad_train, f)
 
         with open(os.path.join(PATH, 'performance_train.pkl'), "wb") as f:
             dump(performance_train, f)
@@ -271,8 +256,8 @@ def main():
         print("Refine Weight")
         output_fine_tune = training(mode="train", net=net, epochs=fine_tune_epochs, optimizer_list=optimizer_list_fine_tune,
                                     impute_lrs=impute_lrs_fine_tune, **optim_args)
-        # para_fine_tune = output_fine_tune["para_path"]
-        # para_grad_fine_tune = output_fine_tune["para_grad_path"]
+        para_fine_tune = output_fine_tune["para_path"]
+        para_grad_fine_tune = output_fine_tune["para_grad_path"]
         # para_gamma_fine_tune = output_fine_tune["para_gamma_path"]
         # var_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["var_selected_out"]
         # num_gamma_out_fine_tune = output_fine_tune["input_gamma_path"]["num_selected_out"]
@@ -285,11 +270,11 @@ def main():
         # with open(os.path.join(PATH, 'para_gamma_fine_tune.pkl'), "wb") as f:
         #     dump(para_gamma_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
-        #     dump(para_fine_tune, f)
+        with open(os.path.join(PATH, 'para_fine_tune.pkl'), "wb") as f:
+            dump(para_fine_tune, f)
 
-        # with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "wb") as f:
-        #     dump(para_grad_fine_tune, f)
+        with open(os.path.join(PATH, 'para_grad_fine_tune.pkl'), "wb") as f:
+            dump(para_grad_fine_tune, f)
 
         with open(os.path.join(PATH, 'performance_fine_tune.pkl'), "wb") as f:
             dump(performance_fine_tune, f)
@@ -306,27 +291,14 @@ def main():
         # with open(os.path.join(PATH, 'num_selected_treat_fine_tune.pkl'), "wb") as f:
         #     dump(num_gamma_treat_fine_tune, f)
 
-        # save training results for this run
-        out_train_loss_list[prune_seed] = performance_fine_tune['out_train_loss'][-1]
-        out_val_loss_list[prune_seed] = performance_fine_tune['out_val_loss'][-1]
-        if classification_flag:
-            out_train_acc_list[prune_seed] = performance_fine_tune['out_train_acc'][-1]
-            out_val_acc_list[prune_seed] = performance_fine_tune['out_val_acc'][-1]
-
-        treat_train_loss_list[prune_seed] = performance_fine_tune['treat_train_loss'][-1]
-        treat_val_loss_list[prune_seed] = performance_fine_tune['treat_val_loss'][-1]
-        treat_train_acc_list[prune_seed] = performance_fine_tune['treat_train_acc'][-1]
-        treat_val_acc_list[prune_seed] = performance_fine_tune['treat_val_acc'][-1]
-
         # calculate BIC
         with torch.no_grad():
             num_non_zero_element = 0
             for name, para in net.named_parameters():
                 num_non_zero_element = num_non_zero_element + para.numel() - net.mask_prune[name].sum()
-            dim_list[prune_seed] = num_non_zero_element
 
             BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
-            BIC_list[prune_seed] = BIC
+            BIC_list.append(BIC)
 
             print("number of non-zero connections:", num_non_zero_element)
             print('BIC:', BIC)
@@ -342,26 +314,30 @@ def main():
                 pred_resid = torch.flatten(y - pred)
                 ate_db += torch.sum(outcome_contrast + prop_contrast * pred_resid)
 
-            ate_list[prune_seed] = ate_db/len(val_set)
-
-        torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
+        if BIC == min(BIC_list):
+            results = dict(dim=0, BIC=0, num_selection_out=0, num_selection_treat=0, out_train_loss=0, out_val_loss=0,
+                           treat_train_loss=0, treat_val_loss=0, treat_train_acc=0, treat_val_acc=0, ate=0)
+            torch.save(net.state_dict(), os.path.join(base_path, 'model.pt'))
+            results['num_selection_out'] = num_gamma_out_train[training_epochs-1].item()
+            results['num_selection_treat'] = num_gamma_treat_train[training_epochs-1].item()
+            results['out_train_loss'] = performance_fine_tune['out_train_loss'][-1]
+            results['treat_train_loss'] = performance_fine_tune['treat_train_loss'][-1]
+            results['out_val_loss'] = performance_fine_tune['out_val_loss'][-1]
+            results['treat_val_loss'] = performance_fine_tune['treat_val_loss'][-1]
+            results['treat_train_acc'] = performance_fine_tune['treat_train_acc'][-1]
+            results['treat_val_acc'] = performance_fine_tune['treat_val_acc'][-1]
+            results['ate'] = (ate_db/len(test_set)).item()
+            if classification_flag:
+                results['out_train_acc'] = performance_fine_tune['out_train_acc'][-1]
+                results['out_val_acc'] = performance_fine_tune['out_val_acc'][-1]
+            results['dim'] = num_non_zero_element.item()
+            results['BIC'] = BIC
+        BIC_list.popleft()
 
     # save overall performance
-    np.savetxt(os.path.join(base_path, 'Overall_train_loss_out.txt'), out_train_loss_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_val_loss_out.txt'), out_val_loss_list, fmt="%s")
-    if classification_flag:
-        np.savetxt(os.path.join(base_path, 'Overall_train_acc_out.txt'), out_train_acc_list, fmt="%s")
-        np.savetxt(os.path.join(base_path, 'Overall_val_acc_out.txt'), out_val_acc_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_train_loss_treat.txt'), treat_train_loss_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_val_loss_treat.txt'), treat_val_loss_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_train_acc_treat.txt'), treat_train_acc_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_val_acc_treat.txt'), treat_val_acc_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_BIC.txt'), BIC_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_non_zero_connections.txt'), dim_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_selected_variables_out.txt'), num_selection_out_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_selected_variables_treat.txt'), num_selection_treat_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_ATE.txt'), ate_list, fmt="%s")
-
+    results_file = open(os.path.join(base_path, 'results.json'), "w")
+    json.dump(results, results_file, indent="")
+    results_file.close()
 
 if __name__ == '__main__':
     main()
