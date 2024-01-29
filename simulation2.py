@@ -118,7 +118,7 @@ def main():
     # training results containers
     results = dict(dim=0, BIC=0, num_selection_out=0, num_selection_treat=0, out_train_loss=0, out_val_loss=0,
                    treat_train_loss=0, treat_val_loss=0, treat_train_acc=0, treat_val_acc=0, ate=0)
-    BIC_list = deque([])  # BIC value for model selection
+    BIC_list = []  # BIC value for model selection
     if classification_flag:
         results.update([('out_train_acc', 0), ('out_val_acc', 0)])
 
@@ -332,12 +332,13 @@ def main():
                 results['out_val_acc'] = performance_fine_tune['out_val_acc'][-1]
             results['dim'] = num_non_zero_element.item()
             results['BIC'] = BIC
-        BIC_list.popleft()
 
     # save overall performance
     results_file = open(os.path.join(base_path, 'results.json'), "w")
     json.dump(results, results_file, indent="")
     results_file.close()
+
+    print(BIC_list)
 
 if __name__ == '__main__':
     main()
