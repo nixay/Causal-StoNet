@@ -1,4 +1,4 @@
-from scipy.stats import truncnorm, bernoulli
+from scipy.stats import truncnorm, bernoulli, beta, norm
 from torch.utils.data import Dataset, random_split, ConcatDataset, Subset
 from sklearn.preprocessing import RobustScaler, StandardScaler
 import numpy as np
@@ -34,10 +34,12 @@ def data_preprocess(data, partition_seed, cross_fit_no, cross_val=3, x_scale=Tru
     size_list.append(data_size-(cross_val-1)*size)
     cross_fit_set = random_split(data, size_list, generator=torch.Generator().manual_seed(partition_seed))
     val_set = cross_fit_set.pop(cross_fit_no-1)
+    test_set = cross_fit_set.pop(cross_fit_no-1 if cross_fit_no < cross_val else 0)
     train_set = ConcatDataset(cross_fit_set)
 
     val_indices = val_set.indices
-    train_indices = list(np.concatenate([cross_fit_set[i].indices for i in range(cross_val-1)]).flat)
+    test_indices = test_set.indices
+    train_indices = list(np.concatenate([cross_fit_set[i].indices for i in range(cross_val-2)]).flat)
 
     x_scalar = StandardScaler()
     y_scalar = StandardScaler()
@@ -46,13 +48,15 @@ def data_preprocess(data, partition_seed, cross_fit_no, cross_val=3, x_scale=Tru
         x_scalar.fit(data.num_var[train_indices])
         data.num_var[train_indices] = np.array(x_scalar.transform(data.num_var[train_indices]))
         data.num_var[val_indices] = np.array(x_scalar.transform(data.num_var[val_indices]))
+        data.num_var[test_indices] = np.array(x_scalar.transform(data.num_var[test_indices]))
 
     if y_scale:
         y_scalar.fit(data.y[train_indices])
         data.y[train_indices] = np.array(y_scalar.transform(data.y[train_indices]))
         data.y[val_indices] = np.array(y_scalar.transform(data.y[val_indices]))
+        data.y[test_indices] = np.array(y_scalar.transform(data.y[test_indices]))
 
-    return train_set, val_set, x_scalar, y_scalar
+    return train_set, val_set, test_set, x_scalar, y_scalar
 
 
 def miss_simulated_preprocess(data, partition_seed):
@@ -522,24 +526,63 @@ class acic_bench(Dataset):
         return y, treat, x
 
 
-class Simulation2(Dataset):
+class Simulation(Dataset):
     """
-    load dataset for simulation 2
-    no need to do data preprocessing
+    generate simulation data with causal relationship
+    input_size: int
+        dimension of covariates
+    sample_size: int
+        sample size of the training set
+    seed: int
+        random seed to generate the dataset
     """
-    def __init__(self, data_name, dgp):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, input_size, sample_size, seed):
+        self.sample_size = sample_size
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        file_name = data_name + '_' + str(dgp) + '.csv'
-        data = pd.read_csv(os.path.join("./benchmark/sim", file_name))
-        self.data_size = len(data.index)
+        one_count, zero_count = 0, 0  # count of the samples in treatment group and control group, respectively
+        one_treat, one_x = ([] for _ in range(2))
+        zero_treat, zero_x = ([] for _ in range(2))
 
-        self.y = torch.FloatTensor(np.array(data['y']).reshape(self.data_size, 1)).to(device)
-        self.treat = torch.FloatTensor(np.array(data['treat'], dtype=np.float32)).to(device)
-        self.x = torch.FloatTensor(np.array(data.loc[:, ~data.columns.isin(['y', 'treat', 'tau'])], dtype=np.float32)).to(device)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        while min(one_count, zero_count) < self.sample_size // 2:
+            # generate covariates
+            ee = truncnorm.rvs(-10, 10)
+            x_temp = truncnorm.rvs(-10, 10, size=input_size) + ee
+            x_temp /= np.sqrt(2)
+
+            # generate treatment
+            temp = (norm.cdf(x_temp[0]) + norm.cdf(x_temp[2]) + norm.cdf(x_temp[4])).mean()
+            temp = beta.cdf(temp, 2, 4)
+            prop = 0.25 * (1+temp)
+            treat_temp = bernoulli.rvs(p=prop)
+
+            if treat_temp == 1:
+                one_count += 1
+                one_x.append(x_temp)
+                one_treat.append(treat_temp)
+            else:
+                zero_count += 1
+                zero_x.append(x_temp)
+                zero_treat.append(treat_temp)
+
+        x = np.array(one_x[:(self.sample_size // 2)] + zero_x[:(self.sample_size // 2)])
+        treat = np.array(one_treat[:(self.sample_size // 2)] + zero_treat[:(self.sample_size // 2)])
+
+        # generate outcome
+        c = 5*x[..., 2]/(1+x[..., 3]**2) + 2*x[..., 4]
+        f1 = 2/(1+np.exp(-x[..., 0]+0.5))
+        f2 = 2/(1+np.exp(-x[..., 1]+0.5))
+        ita = f1*f2 - f1*f2.mean()
+        y = c + (3+ita)*treat + 0.25*norm.rvs(size=self.sample_size)
+
+        self.x = torch.FloatTensor(x).to(self.device)
+        self.y = torch.FloatTensor(y.reshape(self.sample_size, 1)).to(self.device)
+        self.treat = torch.FloatTensor(treat).to(self.device)
 
     def __len__(self):
-        return int(self.data_size)
+        return int(self.sample_size)
 
     def __getitem__(self, idx):
         y = self.y[idx]
