@@ -1,14 +1,13 @@
 from model.network import StoNet_Causal
 from model.training import training
-from data import SimData_Causal
-from torch.utils.data import DataLoader, random_split
+from data import Simulation1_complete
+from torch.utils.data import DataLoader, random_split, ConcatDataset
 import torch
 import numpy as np
 import argparse
 import os
 import errno
 from torch.optim import SGD
-import json
 from pickle import dump
 
 parser = argparse.ArgumentParser(description='Run Simulation for Causal StoNet')
@@ -16,11 +15,8 @@ parser = argparse.ArgumentParser(description='Run Simulation for Causal StoNet')
 # simulation setting
 parser.add_argument('--data_seed', default=1, type=int, help='set seed for data generation')
 parser.add_argument('--partition_seed', default=1, type=int, help='set seed for dataset partition')
-parser.add_argument('--data_name', default='cor', type=str, help='name of simulation dataset')
-parser.add_argument('--input_dim', default=100, type=int, help='dimension of input variable')
 
 # dataset setting
-parser.add_argument('--num_workers', default=0, type=int, help='number of workers for DataLoader')
 parser.add_argument('--train_size', default=10000, type=int, help='size of training set')
 parser.add_argument('--val_size', default=1000, type=int, help='size of validation set')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
@@ -69,23 +65,20 @@ def main():
     classification_flag = args.classification_flag
 
     # generate dataset
-    data_name = args.data_name
     data_seed = args.data_seed
     train_size = args.train_size
     val_size = args.val_size
-    data_generate_args = dict(input_size=args.input_dim, seed=data_seed, data_size=train_size+val_size*2)
-
-    data = SimData_Causal(**data_generate_args)
-
-    train_set, val_set, test_set= random_split(data, [train_size, val_size, val_size],
-                                      generator=torch.Generator().manual_seed(args.partition_seed))
+    data = Simulation1_complete(data_seed)
+    train_set, val_set, test_set = random_split(data, [train_size, val_size, val_size],
+                                                generator=torch.Generator().manual_seed(1))
+    in_sample_set = ConcatDataset([train_set, val_set])
 
     # load training data and validation data
-    num_workers = args.num_workers
     batch_size = args.batch_size
-    train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    test_data = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    train_data = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+    val_data = DataLoader(val_set, batch_size=batch_size, shuffle=True)
+    test_data = DataLoader(test_set, batch_size=batch_size, shuffle=True)
+    in_sample_data = DataLoader(in_sample_set, batch_size=batch_size)
 
     # network setup
     net_args = dict(num_hidden=args.layer, hidden_dim=args.unit, input_dim=data.x[0].size(dim=0),
@@ -121,23 +114,15 @@ def main():
             0.5 / prior_sigma_0 - 0.5 / prior_sigma_1))
 
     # training results containers
-    dim_list = np.zeros([num_seed])  # total number of non-zero element of the pruned network
-    BIC_list = np.zeros([num_seed])  # BIC value for model selection
-    num_selection_out_list = np.zeros([num_seed])  # number of selected input for outcome variable
-    num_selection_treat_list = np.zeros([num_seed])  # number of selected input for treatment
-    out_train_loss_list = np.zeros([num_seed])
-    out_val_loss_list = np.zeros([num_seed])
+    results = dict(dim=0, BIC=0, num_selection_out=0, num_selection_treat=0, out_train_loss=0, out_val_loss=0,
+                   treat_train_loss=0, treat_val_loss=0, treat_train_acc=0, treat_val_acc=0,
+                   error_in_sample=0, error_out_sample=0)
+    BIC_list = []  # BIC value for model selection
     if classification_flag:
-        out_train_acc_list = np.zeros([num_seed])
-        out_val_acc_list = np.zeros([num_seed])
-    treat_train_loss_list = np.zeros([num_seed])
-    treat_val_loss_list = np.zeros([num_seed])
-    treat_train_acc_list = np.zeros([num_seed])
-    treat_val_acc_list = np.zeros([num_seed])
-    ate_list = np.zeros([num_seed])
+        results.update([('out_train_acc', 0), ('out_val_acc', 0)])
 
     # path to save the result
-    base_path = os.path.join('.', 'simulation', 'result', str(train_size), str(data_seed))
+    base_path = os.path.join('.', 'simulation1', 'result', str(data_seed))
     basic_spec = str(sigma_list) + '_' + str(mh_step) + '_' + str(training_epochs) + '_' + str(treat_loss_weight)
     spec = str(impute_lrs) + '_' + str(para_lrs_train) + '_' + str(prior_sigma_0) + '_' + \
            str(prior_sigma_1) + '_' + str(lambda_n)
@@ -147,7 +132,7 @@ def main():
     for prune_seed in range(num_seed):
         print('number of runs', prune_seed)
 
-        PATH = os.path.join(base_path, str(prune_seed))
+        PATH = os.path.join(base_path)
         if not os.path.isdir(PATH):
             try:
                 os.makedirs(PATH)
@@ -228,9 +213,6 @@ def main():
         net.prune_masked_para()
 
         # save model training results
-        num_selection_out_list[prune_seed] = num_gamma_out_train[training_epochs-1]
-        num_selection_treat_list[prune_seed] = num_gamma_treat_train[training_epochs-1]
-
         temp_str = [str(int(x)) for x in var_gamma_out_train[str(training_epochs-1)]]
         temp_str = ' '.join(temp_str)
         filename = PATH + 'selected_variable_out.txt'
@@ -308,61 +290,63 @@ def main():
         # with open(os.path.join(PATH, 'num_selected_treat_fine_tune.pkl'), "wb") as f:
         #     dump(num_gamma_treat_fine_tune, f)
 
-        # save training results for this run
-        out_train_loss_list[prune_seed] = performance_fine_tune['out_train_loss'][-1]
-        out_val_loss_list[prune_seed] = performance_fine_tune['out_val_loss'][-1]
-        if classification_flag:
-            out_train_acc_list[prune_seed] = performance_fine_tune['out_train_acc'][-1]
-            out_val_acc_list[prune_seed] = performance_fine_tune['out_val_acc'][-1]
-
-        treat_train_loss_list[prune_seed] = performance_fine_tune['treat_train_loss'][-1]
-        treat_val_loss_list[prune_seed] = performance_fine_tune['treat_val_loss'][-1]
-        treat_train_acc_list[prune_seed] = performance_fine_tune['treat_train_acc'][-1]
-        treat_val_acc_list[prune_seed] = performance_fine_tune['treat_val_acc'][-1]
-
         # calculate BIC
         with torch.no_grad():
             num_non_zero_element = 0
             for name, para in net.named_parameters():
                 num_non_zero_element = num_non_zero_element + para.numel() - net.mask_prune[name].sum()
-            dim_list[prune_seed] = num_non_zero_element
 
             BIC = (np.log(train_set.__len__()) * num_non_zero_element - 2 * np.sum(likelihoods)).item()
-            BIC_list[prune_seed] = BIC
+            BIC_list.append(BIC)
 
             print("number of non-zero connections:", num_non_zero_element)
             print('BIC:', BIC)
 
         # calculate doubly-robust estimator of ate
         with torch.no_grad():
-            ate_db = 0  # doubly-robust estimate of average treatment effect
-            for y, treat, x, _ in test_data:
+            ate_est_in, ate_true_in, ate_est_out, ate_true_out = 0, 0, 0, 0
+            for y, treat, x, tau in test_data:  # out-of-sample error
                 pred, prop_score = net.forward(x, treat)
                 counter_fact, _ = net.forward(x, 1 - treat)
                 outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
                 prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
                 pred_resid = torch.flatten(y - pred)
-                ate_db += torch.sum(outcome_contrast + prop_contrast * pred_resid)
+                ate_est_out += torch.sum(outcome_contrast + prop_contrast * pred_resid)
+                ate_true_out += torch.sum(tau)
+            error_out = abs((ate_est_out-ate_true_out)/len(test_set)).item()
 
-            ate_list[prune_seed] = ate_db/len(val_set)
+            for y, treat, x, tau in in_sample_data:  # in-sample error
+                pred, prop_score = net.forward(x, treat)
+                counter_fact, _ = net.forward(x, 1 - treat)
+                outcome_contrast = torch.flatten(pred-counter_fact) * (2*treat - 1)
+                prop_contrast = treat/prop_score - (1-treat)/(1-prop_score)
+                pred_resid = torch.flatten(y - pred)
+                ate_est_in += torch.sum(outcome_contrast + prop_contrast * pred_resid)
+                ate_true_in += torch.sum(tau)
+            error_in = abs((ate_est_in-ate_true_in)/(train_size+val_size)).item()
 
-        torch.save(net.state_dict(), os.path.join(PATH, 'model' + str(prune_seed)+'.pt'))
+        if BIC == min(BIC_list):
+            results['num_selection_out'] = num_gamma_out_train[training_epochs-1].item()
+            results['num_selection_treat'] = num_gamma_treat_train[training_epochs-1].item()
+            results['out_train_loss'] = performance_fine_tune['out_train_loss'][-1]
+            results['treat_train_loss'] = performance_fine_tune['treat_train_loss'][-1]
+            results['out_val_loss'] = performance_fine_tune['out_val_loss'][-1]
+            results['treat_val_loss'] = performance_fine_tune['treat_val_loss'][-1]
+            results['treat_train_acc'] = performance_fine_tune['treat_train_acc'][-1]
+            results['treat_val_acc'] = performance_fine_tune['treat_val_acc'][-1]
+            results['error_in_sample'] = error_in
+            results['error_out_sample'] = error_out
+            if classification_flag:
+                results['out_train_acc'] = performance_fine_tune['out_train_acc'][-1]
+                results['out_val_acc'] = performance_fine_tune['out_val_acc'][-1]
+            results['dim'] = num_non_zero_element.item()
+            results['BIC'] = BIC
+
+            torch.save(net.state_dict(), os.path.join(base_path, 'model.pt'))
 
     # save overall performance
-    np.savetxt(os.path.join(base_path, 'Overall_train_loss_out.txt'), out_train_loss_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_val_loss_out.txt'), out_val_loss_list, fmt="%s")
-    if classification_flag:
-        np.savetxt(os.path.join(base_path, 'Overall_train_acc_out.txt'), out_train_acc_list, fmt="%s")
-        np.savetxt(os.path.join(base_path, 'Overall_val_acc_out.txt'), out_val_acc_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_train_loss_treat.txt'), treat_train_loss_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_val_loss_treat.txt'), treat_val_loss_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_train_acc_treat.txt'), treat_train_acc_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_val_acc_treat.txt'), treat_val_acc_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_BIC.txt'), BIC_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_non_zero_connections.txt'), dim_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_selected_variables_out.txt'), num_selection_out_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_selected_variables_treat.txt'), num_selection_treat_list, fmt="%s")
-    np.savetxt(os.path.join(base_path, 'Overall_ATE.txt'), ate_list, fmt="%s")
+    with open(os.path.join(base_path, 'causal_stoNet_results.pkl'), "wb") as f:
+        dump(results, f)
 
 
 if __name__ == '__main__':

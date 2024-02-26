@@ -83,92 +83,60 @@ def miss_simulated_preprocess(data, partition_seed):
     return train_set, val_set, test_set
 
 
-# Simulation Dataset
-class SimData_Causal(Dataset):
+class Simulation1_complete(Dataset):
     """
-    generate simulation data with causal relationship
-    Note that when using this dataset, 'shuffle' argument has to be set to be true in dataloader.
-    input_size: int
-        the dimension of input variable
+    generate simulation dataset;
+    covariates are correlated based on the pre-specified AR(2) process
     seed: int
-        random seed to generate the dataset
-    data_size: int
-        sample size of the dataset
-    cor: boolean
-        if True: inputs are correlated
-        if False: inputs are independent
-        The default is true
-
+        seed to control randomness
     """
-    def __init__(self, input_size, seed, data_size, cor=True):
-        self.data_size = data_size
+    def __init__(self, seed):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        one_count, zero_count = 0, 0  # count of the samples in treatment group and control group, respectively
-        one_treat, one_x, one_y, one_tau_count = ([] for _ in range(4))
-        zero_treat, zero_x, zero_y, zero_tau_count = ([] for _ in range(4))
+        # load covariates
+        csv_name = 'covariates_' + str(seed) + '.csv'
+        x = np.loadtxt(os.path.join('./raw_data/sim_missing', csv_name), delimiter=",", skiprows=1)
+        self.data_size = x.__len__()
 
+        # set seed
         np.random.seed(seed)
         torch.manual_seed(seed)
-        while min(one_count, zero_count) < data_size // 2:
-            # generate x
-            if cor:
-                ee = truncnorm.rvs(-10, 10)
-                x_temp = truncnorm.rvs(-10, 10, size=input_size) + ee
-                x_temp /= np.sqrt(2)
-            else:
-                x_temp = truncnorm.rvs(-10, 10, size=input_size)
 
-            # nodes in the first hidden layer
-            h11 = np.tanh(2*x_temp[0]+1*x_temp[3])
-            h12 = np.tanh(-x_temp[0]-2*x_temp[4])
-            h13 = np.tanh(2*x_temp[1]-2*x_temp[2])
-            h14 = np.tanh(-2*x_temp[3]+1*x_temp[4])
+        # nodes in the first hidden layer
+        h11 = np.tanh(2*x[:, 0]+1*x[:, 3])
+        h12 = np.tanh(-x[:, 0]-2*x[:, 4])
+        h13 = np.tanh(2*x[:, 1]-2*x[:, 2])
+        h14 = np.tanh(-2*x[:, 3]+1*x[:, 4])
 
-            # nodes in the second hidden layer
-            h21 = np.tanh(-2*h11+h13)
-            h22 = h12-h13
-            h23 = np.tanh(h13-2*h14)
+        # nodes in the second hidden layer
+        h21 = np.tanh(-2*h11+h13)
+        h22 = h12-h13
+        h23 = np.tanh(h13-2*h14)
 
-            # generate treatment
-            prob = np.exp(h22)/(1 + np.exp(h22))
-            treat_temp = bernoulli.rvs(p=prob)
+        # generate treatment
+        prob = np.exp(h22)/(1 + np.exp(h22))
+        treat = bernoulli.rvs(p=prob)
 
-            # nodes in the third hidden layer
-            h31 = np.tanh(1*h21-2*treat_temp)
-            h32 = np.tanh(-1*treat_temp+2*h23)
+        # nodes in the third hidden layer
+        h31 = np.tanh(1*h21-2*treat)
+        h32 = np.tanh(-1*treat+2*h23)
 
-            # counterfactual nodes in the third hidden layer
-            h31_count = np.tanh(1*h21-2*(1-treat_temp))
-            h32_count = np.tanh(-1*(1-treat_temp)+2*h23)
+        # counterfactual nodes in the third hidden layer
+        h31_count = np.tanh(1*h21-2*(1-treat))
+        h32_count = np.tanh(-1*(1-treat)+2*h23)
 
-            # generate true treatment effect
-            y_temp = -4*h31+2*h32
-            y_count_temp = -4*h31_count+2*h32_count
-            tau = (y_temp-y_count_temp) *(2*treat_temp-1)
+        # generate treatment effect
+        y = -4*h31+2*h32
+        y_count = -4*h31_count+2*h32_count
+        tau = (y-y_count) * (2*treat-1)
 
-            # generate outcome
-            y_temp = y_temp + np.random.normal(0, 1)
+        # generate outcome variable
+        y = y + np.random.normal(0, 1)
 
-            if treat_temp == 1:
-                one_count += 1
-                one_x.append(x_temp)
-                one_y.append(y_temp)
-                one_treat.append(treat_temp)
-                one_tau_count.append(tau)
-            else:
-                zero_count += 1
-                zero_x.append(x_temp)
-                zero_y.append(y_temp)
-                zero_treat.append(treat_temp)
-                zero_tau_count.append(tau)
-
-        self.x = torch.FloatTensor(np.array(one_x[:(data_size // 2)] + zero_x[:(data_size // 2)])).to(device)
-        self.y = torch.FloatTensor(np.array(one_y[:(data_size // 2)] + zero_y[:(data_size // 2)]).
-                                   reshape(self.data_size, 1)).to(device)
-        self.treat = torch.FloatTensor(np.array(one_treat[:(data_size // 2)] + zero_treat[:(data_size // 2)])).to(device)
-        self.tau = torch.FloatTensor(np.array(one_tau_count[:(data_size // 2)] + zero_tau_count[:(data_size // 2)]).
-                                         reshape(self.data_size, 1)).to(device)
+        self.x = torch.FloatTensor(x).to(device)
+        self.treat = torch.FloatTensor(treat).to(device)
+        self.y = torch.FloatTensor(y).reshape(self.data_size, 1).to(device)
+        self.tau = torch.FloatTensor(tau).reshape(self.data_size, 1).to(device)
 
     def __len__(self):
         return int(self.data_size)
@@ -219,54 +187,6 @@ class acic_data_homo(Dataset):
         treat = self.treat[idx]
         x = torch.FloatTensor(np.concatenate((self.num_var[idx], self.cat_var[idx]))).to(self.device)
         return y, treat, x
-
-
-# ACIC Dataset with Continuous Variable and Heterogeneous Treatment Effect
-class acic_data_hete(Dataset):
-    """
-    load ACIC test data that combines different dgp to create heterogeneous treatment effect
-    need to scale the numerical variables
-    """
-    def __init__(self):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # read and concatenate the csv files
-        data = []
-        file_names_list = ['cont2', 'cont3', 'cont6', 'cont7']
-        root_dir = './raw_data/acic/test_data'
-        for file_name in file_names_list:
-            dir = os.path.join(root_dir, file_name + ".csv")
-            file = pd.read_csv(dir)
-            data.append(file)
-        data = pd.concat(data, ignore_index=True)
-        self.data_size = len(data.index)
-
-        # extract column names for categorical variables
-        cat_col = []
-        for col in data.columns:
-            if data[col].abs().max() <= 10:
-                if len(data[col].unique()) <= data[col].max() + 1:
-                    cat_col.append(col)
-        cat_col = cat_col[1:]
-
-        self.ate = torch.FloatTensor(np.array(data['ATE'], dtype=np.float32)).to(self.device)
-        self.y1 = torch.FloatTensor(np.array(data['EY1'], dtype=np.float32)).to(self.device)
-        self.y0 = torch.FloatTensor(np.array(data['EY0'], dtype=np.float32)).to(self.device)
-
-        self.y = np.array(data['Y'], dtype=np.float32).reshape(self.data_size, 1)
-        self.treat = torch.FloatTensor(np.array(data['A'], dtype=np.float32)).to(self.device)
-        self.cat_var = np.array(data[cat_col], dtype=np.float32)
-        self.num_var = np.array(data.loc[:, ~data.columns.isin(['ATE', 'EY1', 'EY0', 'Y', 'A', *cat_col])], dtype=np.float32)
-
-    def __len__(self):
-        return int(self.data_size)
-
-    def __getitem__(self, idx):
-        y = torch.FloatTensor(self.y[idx]).to(self.device)
-        treat = self.treat[idx]
-        x = torch.FloatTensor(np.concatenate((self.num_var[idx], self.cat_var[idx]))).to(self.device)
-        return y, treat, x
-
 
 # 401k Dataset
 class PensionData(Dataset):
@@ -589,3 +509,101 @@ class Simulation(Dataset):
         treat = self.treat[idx]
         x = self.x[idx]
         return y, treat, x
+
+
+# Simulation Dataset
+class SimData_Causal(Dataset):
+    """
+    generate simulation data with causal relationship
+    Note that when using this dataset, 'shuffle' argument has to be set to be true in dataloader.
+    input_size: int
+        the dimension of input variable
+    seed: int
+        random seed to generate the dataset
+    data_size: int
+        sample size of the dataset
+    cor: boolean
+        if True: inputs are correlated
+        if False: inputs are independent
+        The default is true
+
+    """
+    def __init__(self, input_size, seed, data_size, cor=True):
+        self.data_size = data_size
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        one_count, zero_count = 0, 0  # count of the samples in treatment group and control group, respectively
+        one_treat, one_x, one_y, one_tau_count = ([] for _ in range(4))
+        zero_treat, zero_x, zero_y, zero_tau_count = ([] for _ in range(4))
+
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        while min(one_count, zero_count) < data_size // 2:
+            # generate x
+            if cor:
+                ee = truncnorm.rvs(-10, 10)
+                x_temp = truncnorm.rvs(-10, 10, size=input_size) + ee
+                x_temp /= np.sqrt(2)
+            else:
+                x_temp = truncnorm.rvs(-10, 10, size=input_size)
+
+            # nodes in the first hidden layer
+            h11 = np.tanh(2*x_temp[0]+1*x_temp[3])
+            h12 = np.tanh(-x_temp[0]-2*x_temp[4])
+            h13 = np.tanh(2*x_temp[1]-2*x_temp[2])
+            h14 = np.tanh(-2*x_temp[3]+1*x_temp[4])
+
+            # nodes in the second hidden layer
+            h21 = np.tanh(-2*h11+h13)
+            h22 = h12-h13
+            h23 = np.tanh(h13-2*h14)
+
+            # generate treatment
+            prob = np.exp(h22)/(1 + np.exp(h22))
+            treat_temp = bernoulli.rvs(p=prob)
+
+            # nodes in the third hidden layer
+            h31 = np.tanh(1*h21-2*treat_temp)
+            h32 = np.tanh(-1*treat_temp+2*h23)
+
+            # counterfactual nodes in the third hidden layer
+            h31_count = np.tanh(1*h21-2*(1-treat_temp))
+            h32_count = np.tanh(-1*(1-treat_temp)+2*h23)
+
+            # generate true treatment effect
+            y_temp = -4*h31+2*h32
+            y_count_temp = -4*h31_count+2*h32_count
+            tau = (y_temp-y_count_temp) *(2*treat_temp-1)
+
+            # generate outcome
+            y_temp = y_temp + np.random.normal(0, 1)
+
+            if treat_temp == 1:
+                one_count += 1
+                one_x.append(x_temp)
+                one_y.append(y_temp)
+                one_treat.append(treat_temp)
+                one_tau_count.append(tau)
+            else:
+                zero_count += 1
+                zero_x.append(x_temp)
+                zero_y.append(y_temp)
+                zero_treat.append(treat_temp)
+                zero_tau_count.append(tau)
+
+        self.x = torch.FloatTensor(np.array(one_x[:(data_size // 2)] + zero_x[:(data_size // 2)])).to(device)
+        self.y = torch.FloatTensor(np.array(one_y[:(data_size // 2)] + zero_y[:(data_size // 2)]).
+                                   reshape(self.data_size, 1)).to(device)
+        self.treat = torch.FloatTensor(np.array(one_treat[:(data_size // 2)] + zero_treat[:(data_size // 2)])).to(device)
+        self.tau = torch.FloatTensor(np.array(one_tau_count[:(data_size // 2)] + zero_tau_count[:(data_size // 2)]).
+                                     reshape(self.data_size, 1)).to(device)
+
+    def __len__(self):
+        return int(self.data_size)
+
+    def __getitem__(self, idx):
+        y = self.y[idx]
+        x = self.x[idx]
+        treat = self.treat[idx]
+        tau = self.tau[idx]
+        return y, treat, x, tau
