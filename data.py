@@ -473,7 +473,7 @@ class Simulation(Dataset):
             x_temp /= np.sqrt(2)
 
             # generate treatment
-            temp = (norm.cdf(x_temp[0]) + norm.cdf(x_temp[2]) + norm.cdf(x_temp[4])).mean()
+            temp = (norm.cdf(x_temp[0]) + norm.cdf(x_temp[2]) + norm.cdf(x_temp[4]))/3
             temp = beta.cdf(temp, 2, 4)
             prop = 0.25 * (1+temp)
             treat_temp = bernoulli.rvs(p=prop)
